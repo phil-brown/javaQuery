@@ -16,6 +16,8 @@
 
 package self.philbrown.javaQuery;
 
+import java.awt.Image;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
@@ -30,6 +32,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.Semaphore;
 
+import javax.imageio.ImageIO;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
@@ -186,7 +189,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 		if (options.beforeSend() != null)
 		{
 			if (options.context() != null)
-				options.beforeSend().invoke(new $(), options);
+				options.beforeSend().invoke(new $(options.context()), options);
 			else
 				options.beforeSend().invoke(null, options);
 		} 
@@ -358,7 +361,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 			if (options.dataFilter() != null)
 			{
 				if (options.context() != null)
-					options.dataFilter().invoke(new $(), response, options.dataType());
+					options.dataFilter().invoke(new $(options.context()), response, options.dataType());
 				else
 					options.dataFilter().invoke(null, response, options.dataType());
 			}
@@ -369,7 +372,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 			if (function != null)
 			{
 				if (options.context() != null)
-					function.invoke(new $());
+					function.invoke(new $(options.context()));
 				else
 					function.invoke(null);
 			}
@@ -442,6 +445,10 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 					else if (dataType.equalsIgnoreCase("script"))
 					{
 						parsedResponse = parseScript(response);
+					}
+					else if (dataType.equalsIgnoreCase("image"))
+					{
+						parsedResponse = parseImage(response);
 					}
 				}
 				catch (ClientProtocolException cpe)
@@ -533,7 +540,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 									if (func != null)
 									{
 										if (options.context() != null)
-											func.invoke(new $());
+											func.invoke(new $(options.context()));
 										else
 											func.invoke(null);
 									}
@@ -596,7 +603,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 				error.reason = "null response";
 				//invoke error with Request, Status, and Error
 				if (options.context() != null)
-					options.error().invoke(new $(), error, 0, "null response");
+					options.error().invoke(new $(options.context()), error, 0, "null response");
 				else
 					options.error().invoke(null, error, 0, "null response");
 			}
@@ -611,7 +618,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 				//invoke error with Request, Status, and Error
 				Error e = (Error) response;
 				if (options.context() != null)
-					options.error().invoke(new $(), e.error, e.status, e.reason);
+					options.error().invoke(new $(options.context()), e.error, e.status, e.reason);
 				else
 					options.error().invoke(null, e.error, e.status, e.reason);
 			}
@@ -626,7 +633,7 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 			{
 				//invoke success with parsed response and the status string
 				if (options.context() != null)
-					options.success().invoke(new $(), s.obj, s.reason);
+					options.success().invoke(new $(options.context()), s.obj, s.reason);
 				else
 					options.success().invoke(null, s.obj, s.reason);
 			}
@@ -641,14 +648,14 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 			if (response != null)
 			{
 				if (options.context() != null)
-					options.complete().invoke(new $(), response.reason);
+					options.complete().invoke(new $(options.context()), response.reason);
 				else
 					options.complete().invoke(null, response.reason);
 			}
 			else
 			{
 				if (options.context() != null)
-					options.complete().invoke(new $(), "null response");
+					options.complete().invoke(new $(options.context()), "null response");
 				else
 					options.complete().invoke(null, "null response");
 			}
@@ -717,15 +724,20 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 	 */
 	private ScriptResponse parseScript(HttpResponse response) throws ClientProtocolException, IOException
 	{
-		if (options.context() != null)
-		{
-			ScriptResponseHandler handler = new ScriptResponseHandler();
-			return handler.handleResponse(response);
-		}
-		else
-		{
-			throw new NullPointerException("No context provided.");
-		}
+		ScriptResponseHandler handler = new ScriptResponseHandler();
+		return handler.handleResponse(response);
+	}
+	
+	/**
+	 * Parses the HTTP response as an Image Object
+	 * @param response the response to parse
+	 * @return an Image Object containing the retrieved Image
+	 * @throws ClientProtocolException
+	 * @throws IOException
+	 */
+	private Image parseImage(HttpResponse response) throws ClientProtocolException, IOException
+	{
+		return ImageIO.read(response.getEntity().getContent());
 	}
 	
 	/**

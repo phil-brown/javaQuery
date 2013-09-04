@@ -16,18 +16,50 @@
 
 package self.philbrown.javaQuery;
 
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Image;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.Window;
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
+import java.awt.event.HierarchyBoundsListener;
+import java.awt.event.HierarchyEvent;
+import java.awt.event.HierarchyListener;
+import java.awt.event.InputMethodEvent;
+import java.awt.event.InputMethodListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.FileWriter;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import javax.imageio.ImageIO;
+import javax.swing.AbstractButton;
+import javax.swing.ImageIcon;
+import javax.swing.JDialog;
+import javax.swing.JLabel;
+import javax.swing.text.JTextComponent;
+import javax.swing.text.View;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.http.client.methods.HttpUriRequest;
@@ -35,6 +67,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.w3c.dom.Document;
+
+import self.philbrown.javaQuery.SwipeDetector.SwipeListener;
 
 /**
  * Partial port of jQuery to Java
@@ -44,14 +78,7 @@ import org.w3c.dom.Document;
  */
 public class $ 
 {
-	/**
-	 * Shortcut to Constructor
-	 * @return a new instance of javaQuery ($)
-	 */
-	public static $ make()
-	{
-		return new $();
-	}
+
 	
 	/**
 	 * Data types for <em>ajax</em> request responses
@@ -68,14 +95,384 @@ public class $
 		SCRIPT
 	};
 	
+	/** Used to correctly call methods that use simple type parameters via reflection */
+	private static final Map<Class<?>, Class<?>> PRIMITIVE_TYPE_MAP = buildPrimitiveTypeMap();
+
+	/** Inflates the mapping of data types to primitive types */
+	private static Map<Class<?>, Class<?>> buildPrimitiveTypeMap()
+	{
+	    Map<Class<?>, Class<?>> map = new HashMap<Class<?>, Class<?>>();
+	    map.put(Float.class, float.class);
+	    map.put(Double.class, double.class);
+	    map.put(Integer.class, int.class);
+	    map.put(Boolean.class, boolean.class);
+	    map.put(Long.class, long.class);
+	    map.put(Short.class, short.class);
+	    map.put(Byte.class, byte.class);
+	    return map;
+	}
+	
 	/** 
 	 * Optional data referenced by this javaQuery Object. Best practice is to make this a 
 	 * {@link WeakReference} to avoid memory leaks.
 	 */
 	private Object data;
 	
+	/** The current views that will be manipulated */
+	private List<Component> views;
+	/** The lowest level view registered with {@code this} javaQuery. */
+	private Component rootView;
+	/** Function to be called when this{@link #view} gains focus */
+	private Function onFocus;
+	/** Function to be called when this {@link #view} no longer has focus. */
+	private Function offFocus;
+	/** Function to be called when a key is pressed down when this {@link #view} has the focus. */
+	private Function keyDown;
+	/** Function to be called when a key is pressed when this {@link #view} has the focus. */
+	private Function keyPress;
+	/** Function to be called when a key is released when this {@link #view} has the focus. */
+	private Function keyUp;
+	/** Function to be called when a swipe event is captured by this {@link #view}. */
+	private Function swipe;
+	/** Function to be called when a swipe-up event is captured by this {@link #view}. */
+	private Function swipeUp;
+	/** Function to be called when a swipe-down event is captured by this {@link #view}. */
+	private Function swipeDown;
+	/** Function to be called when a swipe-left event is captured by this {@link #view}. */
+	private Function swipeLeft;
+	/** Function to be called when a swipe-right event is captured by this {@link #view}. */
+	private Function swipeRight;
+	/** Used to detect swipes on this {@link #view}. */
+	private SwipeDetector swiper;
+	
 	/** Contains a mapping of {@code javaQuery} extensions. */
 	private static Map<String, Constructor<?>> extensions = new HashMap<String, Constructor<?>>();
+	
+	
+	public $(Component view)
+	{
+		
+		this.views = new ArrayList<Component>();
+		this.views.add(view);
+		this.rootView = view;
+	}
+	
+	public $(List<Component> views)
+	{
+		if (views == null)
+		{
+			throw new NullPointerException("Cannot create javaQuery Instance with null List.");
+		}
+		else if (views.isEmpty())
+		{
+			throw new NullPointerException("Cannot create javaQuery Instance with empty List.");
+		}
+		this.views = views;
+		this.rootView = views.get(0);
+	}
+	
+	public $(Component... views)
+	{
+		if (views == null)
+		{
+			throw new NullPointerException("Cannot create javaQuery Instance with null Array.");
+		}
+		else if (views.length == 0)
+		{
+			throw new NullPointerException("Cannot create javaQuery Instance with empty Array.");
+		}
+		this.rootView = views[0];
+		this.views = Arrays.asList(views);
+	}
+	
+	public static $ with(Component view)
+	{
+		return new $(view);
+	}
+	
+	public static $ with(List<Component> views)
+	{
+		return new $(views);
+	}
+	
+	public static $ with(Component... views)
+	{
+		return new $(views);
+	}
+	
+	private Component findComponentWithName(String name)
+	{
+		return findComponentWithName(name, rootView);
+	}
+	
+	/**
+	 * Finds a component that is identified by the given name
+	 * @param name
+	 * @return the found component, or {@code null} if it was not found.
+	 */
+	public static Component findComponentWithName(String name, Component root)
+	{
+		if (root.getName().equals(name))
+			return root;
+		else if (root instanceof Container)
+		{
+			for (Component c : ((Container) root).getComponents())
+			{
+				Component found = findComponentWithName(name, c);
+				if (found != null)
+				{
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+	
+	/** Sets the set of views to the parents of all currently-selected views */
+	public $ parent()
+	{
+		List<Component> _views = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			Component parent = view.getParent();
+			if (parent != null && !_views.contains(parent))
+			{
+				_views.add(parent);
+			}
+		}
+		this.views.clear();
+		this.views = _views;
+		return this;
+	}
+	
+	/** Sets the set of views to the children of the current set of views with the given child index */
+	public $ child(int index)
+	{
+		List<Component> _views = new ArrayList<Component>();
+		for (Component view : views)
+		{
+			if (view instanceof Container)
+			{
+				Component v = ((Container) view).getComponent(index);
+				if (v != null)
+					_views.add(v);
+			}
+		}
+		views.clear();
+		views = _views;
+		
+		return this;
+	}
+
+	
+	/**
+	 * Refreshes the listeners for focus changes
+	 */
+	private void setupFocusListener()
+	{
+		for (final Component view : views)
+		{
+			view.addFocusListener(new FocusListener() {
+
+				@Override
+				public void focusGained(FocusEvent event) {
+					if (onFocus != null)
+						onFocus.invoke($.with(view));
+				}
+
+				@Override
+				public void focusLost(FocusEvent event) {
+					if (offFocus != null)
+						offFocus.invoke($.with(view));
+				}
+				
+			});
+		}
+	}
+	
+	/**
+	 * Refreshes the listeners for key events
+	 */
+	private void setupKeyListener()
+	{
+		for (final Component view : views)
+		{
+			view.addKeyListener(new KeyListener() {
+
+				@Override
+				public void keyPressed(KeyEvent event) {
+					if (keyDown != null)
+						keyDown.invoke($.with(view), event.getKeyCode(), event);
+				}
+
+				@Override
+				public void keyReleased(KeyEvent event) {
+					if (keyUp != null)
+						keyUp.invoke($.with(view), event.getKeyCode(), event);
+				}
+
+				@Override
+				public void keyTyped(KeyEvent event) {
+					if (keyPress != null)
+						keyPress.invoke($.with(view), event.getKeyCode(), event);
+				}
+				
+			});
+		}
+	}
+	
+	/**
+	 * Refreshes the listeners for swipe events
+	 */
+	private void setupSwipeListener()
+	{
+		for (Component view : views)
+		{
+			view.addMouseListener(new SwipeDetector(view, new SwipeListener() {
+
+				@Override
+				public void onUpSwipe(Component v) {
+					if (swipeUp != null)
+					{
+						swipeUp.invoke($.with(v));
+					}
+					else if (swipe != null)
+					{
+						swipe.invoke($.with(v), SwipeDetector.Direction.UP);
+					}
+				}
+
+				@Override
+				public void onRightSwipe(Component v) {
+					if (swipeRight != null)
+					{
+						swipeRight.invoke($.with(v));
+					}
+					else if (swipe != null)
+					{
+						swipe.invoke($.with(v), SwipeDetector.Direction.RIGHT);
+					}
+				}
+
+				@Override
+				public void onLeftSwipe(Component v) {
+					if (swipeLeft != null)
+					{
+						swipeLeft.invoke($.with(v));
+					}
+					else if (swipe != null)
+					{
+						swipe.invoke($.with(v), SwipeDetector.Direction.LEFT);
+					}
+				}
+
+				@Override
+				public void onDownSwipe(Component v) {
+					if (swipeDown != null)
+					{
+						swipeDown.invoke($.with(v));
+					}
+					else if (swipe != null)
+					{
+						swipe.invoke($.with(v), SwipeDetector.Direction.DOWN);
+					}
+				}
+
+				@Override
+				public void onStartSwipe(Component v) {
+					if (swipe != null)
+					{
+						swipe.invoke($.with(v), SwipeDetector.Direction.START);
+					}
+				}
+
+				@Override
+				public void onStopSwipe(Component v) {
+					if (swipe != null)
+					{
+						swipe.invoke($.with(v), SwipeDetector.Direction.STOP);
+					}
+				}
+				
+			}));
+		}
+	}
+	
+	//TODO: Effects & Animations
+	
+	/**
+	 * Gets the value for the given attribute of the first view in the current selection. 
+	 * This is done using reflection, and as such
+	 * expects a <em>get-</em> or <em>is-</em> prefixed method name for the view.
+	 * @param s the name of the attribute to retrieve
+	 * @return the value of the given attribute name on the first view in the current selection
+	 */
+	public Object attr(String s)
+	{
+		try
+		{
+			Method m = view(0).getClass().getMethod("get" + capitalize(s));
+			return m.invoke(view(0));
+		}
+		catch (Throwable t)
+		{
+			try
+			{
+				Method m = view(0).getClass().getMethod("is" + capitalize(s));
+				return m.invoke(view(0));
+			}
+			catch (Throwable t2)
+			{
+				Log.w("javaQuery", view(0).getClass().getSimpleName() + "has no getter method for the variable " + s + ".");
+				return null;
+			}
+		}
+	}
+	
+	/**
+	 * Sets the value of the given attribute on each view in the current selection. This is done 
+	 * using reflection, and as such a <em>set-</em>prefixed method name for each view.
+	 * @param s the name of the attribute to set
+	 * @param o the value to set to the given attribute
+	 * @return this
+	 */
+	public $ attr(String s, Object o)
+	{
+		for (Component view : this.views)
+		{
+			try
+			{
+				Class<?> objClass = o.getClass();
+				Class<?> simpleClass = PRIMITIVE_TYPE_MAP.get(objClass);
+				if (simpleClass != null)
+				{
+					objClass = simpleClass;
+				}
+				try {
+					Method m = view.getClass().getMethod("set" + capitalize(s), new Class<?>[]{objClass});
+					m.invoke(view, o);
+				}
+				catch (Throwable t) {
+					//try using NineOldAndroids
+					Log.w("javaQuery", view.getClass().getSimpleName() + ".set" + capitalize(s) + "(" + o.getClass().getSimpleName() + ") is not a method!");
+				}
+				
+			}
+			catch (Throwable t)
+			{
+				Log.w("javaQuery", view.getClass().getSimpleName() + ".set" + capitalize(s) + "(" + o.getClass().getSimpleName() + ") is not a method!");
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * @return the view at the given index of the current selection
+	 */
+	public Component view(int index)
+	{
+		return this.views.get(index);
+	}
 	
 	/**
 	 * @return the current data.
@@ -96,8 +493,66 @@ public class $
 		return this;
 	}
 	
-	//these listenTo methods expose the EventCenter, and provide a behavior similar to that provided
-	//by backbone.js
+	/**
+	 * Adds a subview to the first view in the selection
+	 * @param v the subview to add
+	 * @return this
+	 */
+	public $ add(Component v)
+	{
+		if (v == null || v.getParent() != null)
+		{
+			Log.w("javaQuery", "Cannot add View");
+			return this;
+		}
+		if (view(0) instanceof Container)
+		{
+			((Container) view(0)).add(v);
+		}
+		return this;
+	}
+	
+	/**
+	 * Removes a subview from the first view in the current selection
+	 * @param v the subview to remove
+	 * @return this
+	 */
+	public $ remove(Component v)
+	{
+		if (view(0) instanceof Container)
+		{
+			((Container) view(0)).remove(v);
+		}
+		return null;
+	}
+	
+	/**
+	 * Sets the visibility of the current selection to {@link View#VISIBLE}
+	 * @return this
+	 */
+	public $ hide()
+	{
+		for (Component view : views)
+		{
+			view.setVisible(true);
+		}
+		return this;
+	}
+	
+	/**
+	 * Sets the visibility of this {@link #view} to {@link View#INVISIBLE}
+	 * @return this
+	 */
+	public $ show()
+	{
+		for (Component view : views)
+		{
+			view.setVisible(false);
+		}
+		return this;
+	}
+	
+	///Event Handler Attachment
 	
 	/**
 	 * Listen for all events triggered using the {@link #notify(String)} or {@link #notify(String, Map)}
@@ -169,6 +624,693 @@ public class $
 	}
 	
 	/**
+	 * Defines an event type that is handled by {@link $#change(Function)}.
+	 * @author Phil Brown
+	 * @since 1:16:05 PM Sep 4, 2013
+	 *
+	 */
+	public enum changeEvent
+	{
+		INPUT_CARET_POSITION_CHANGED(InputMethodEvent.class),
+		INPUT_METHOD_TEXT_CHANGED(InputMethodEvent.class),
+		HIERARCHY_ANCESTOR_MOVED(HierarchyEvent.class),
+		HIERARCHY_ANCENSTOR_RESIZED(HierarchyEvent.class),
+		HIERARCHY_CHANGED(HierarchyEvent.class),
+		PROPERTY_CHANGED(PropertyChangeEvent.class);
+		
+		/** Class of the event received by the callback function */
+		private Class<?> eventClass;
+		
+		/**
+		 * Constructor
+		 * @param eventClass
+		 */
+		changeEvent(Class<?> eventClass)
+		{
+			this.eventClass = eventClass;
+		}
+		
+		/** Get the class of the event received by the callback function. */
+		public Class<?> getEventClass()
+		{
+			return eventClass;
+		}
+		
+	};
+	
+	/**
+	 * Registers common component changes
+	 * @param function receives an instance of javaQuery with the changed view selected, as well as the
+	 * following arguments:
+	 * <ol>
+	 * <li>{@link changeEvent} to define the type of event that was triggered
+	 * <li>The associated event
+	 * </ol>
+	 * @return
+	 * @see changeEvent
+	 */
+	public $ change(final Function function)
+	{
+		for (final Component component : views)
+		{
+			component.addInputMethodListener(new InputMethodListener() {
+
+				@Override
+				public void caretPositionChanged(InputMethodEvent event) {
+					function.invoke($.with(component), changeEvent.INPUT_CARET_POSITION_CHANGED, event);
+				}
+
+				@Override
+				public void inputMethodTextChanged(InputMethodEvent event) {
+					function.invoke($.with(component), changeEvent.INPUT_METHOD_TEXT_CHANGED, event);
+				}
+				
+			});
+			
+			component.addHierarchyBoundsListener(new HierarchyBoundsListener() {
+
+				@Override
+				public void ancestorMoved(HierarchyEvent event) {
+					function.invoke($.with(component), changeEvent.HIERARCHY_ANCESTOR_MOVED, event);
+				}
+
+				@Override
+				public void ancestorResized(HierarchyEvent event) {
+					function.invoke($.with(component), changeEvent.HIERARCHY_ANCENSTOR_RESIZED, event);
+				}
+				
+			});
+			
+			component.addHierarchyListener(new HierarchyListener() {
+
+				@Override
+				public void hierarchyChanged(HierarchyEvent event) {
+					function.invoke($.with(component), changeEvent.HIERARCHY_CHANGED, event);
+				}
+				
+			});
+			
+			component.addPropertyChangeListener(new PropertyChangeListener() {
+				
+				@Override
+				public void propertyChange(PropertyChangeEvent event) {
+					function.invoke($.with(component), changeEvent.PROPERTY_CHANGED, event);
+				}
+			});
+		}
+		return this;
+	}
+	
+
+	
+	/**
+	 * Get the value associated with the first view in the current selection. If the view is a 
+	 * JTextComponent, this method returns the String text. If it is a Button, the boolean selected 
+	 * state is returned. If it is a JLable, the Icon is returned.
+	 * @return the value of this view, or <em>null</em> if not applicable.
+	 */
+	public Object val()
+	{
+		if (view(0) instanceof JTextComponent)
+		{
+			return ((JTextComponent) view(0)).getText();
+		}
+		else if (view(0) instanceof AbstractButton)
+		{
+			return ((AbstractButton) view(0)).isSelected();
+		}
+		else if (view(0) instanceof JLabel)
+		{
+			return ((JLabel) view(0)).getIcon();
+		}
+		return null;
+	}
+	
+	/**
+	 * Set the value associated with the views in the current selection. If the view is a JTextComponent, 
+	 * this method sets the String text. If it is a Button, the boolean selected state is set. 
+	 * If it is an JLabel, the Icon (ImageIcon, BufferedImage, or String) is set. All other view types 
+	 * are ignored.
+	 * @return this
+	 */
+	public $ val(Object object)
+	{
+		for (Component view : this.views)
+		{
+			if (view instanceof JTextComponent && object instanceof String)
+			{
+				((JTextComponent) view).setText((String) object);
+			}
+			else if (view instanceof AbstractButton && object instanceof Boolean)
+			{
+				((AbstractButton) view).setSelected((Boolean) object);
+			}
+			else if (view instanceof JLabel)
+			{
+				if (object instanceof ImageIcon)
+				{
+					((JLabel) view).setIcon((ImageIcon) object);
+				}
+				else if (object instanceof String)
+				{
+					$.with(view).image((String) object);
+				}
+				else if (object instanceof Image)
+				{
+					((JLabel) view).setIcon(new ImageIcon((Image) object));
+				}				
+			}
+			else if (view instanceof Window)
+			{
+				if (object instanceof Image)
+					((Window) view).setIconImage((Image) object);
+			}
+		}
+		
+		return this;
+	}
+	
+
+	/**
+	 * Triggers a click event on the views in the current selection
+	 * @return this
+	 */
+	public $ click()
+	{
+		for (Component view : this.views)
+		{
+			for (MouseListener ml : view.getMouseListeners())
+			{
+				ml.mousePressed(new MouseEvent(view, 0, 0, 0, view.getWidth()/2, view.getHeight()/2, 1, false));
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * Invokes the given Function every time each view in the current selection is clicked. The only 
+	 * parameter passed to the given function is a javaQuery instance containing the clicked view
+	 * @param function the function to call when this view is clicked
+	 * @return this
+	 */
+	public $ click(final Function function)
+	{
+		for (final Component view : this.views)
+		{
+			view.addMouseListener(new MouseListener() {
+
+				@Override
+				public void mouseClicked(MouseEvent e) {
+					function.invoke($.with(view));
+				}
+
+				@Override
+				public void mouseEntered(MouseEvent e) {}
+
+				@Override
+				public void mouseExited(MouseEvent e) {}
+
+				@Override
+				public void mousePressed(MouseEvent e) {}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {}
+				
+			});
+		}
+		return this;
+	}
+	
+	/**
+	 * Invokes the given Function for click events on each view in the current selection. 
+	 * The function will receive two arguments:
+	 * <ol>
+	 * <li>a javaQuery containing the clicked view
+	 * <li>{@code eventData}
+	 * </ol>
+	 * @param eventData the second argument to pass to the {@code function}
+	 * @param function the function to invoke
+	 * @return
+	 */
+	public $ click(final Object eventData, final Function function)
+	{
+		for (final Component view : this.views)
+		{
+			view.addMouseListener(new MouseListener() {
+
+				@Override
+				public void mouseClicked(MouseEvent e) {
+					function.invoke($.with(view), eventData);
+				}
+
+				@Override
+				public void mouseEntered(MouseEvent e) {}
+
+				@Override
+				public void mouseExited(MouseEvent e) {}
+
+				@Override
+				public void mousePressed(MouseEvent e) {}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {}
+				
+			});
+		}
+		return this;
+	}
+	
+
+	
+	/**
+	 * Triggers a long-click event on this each view in the current selection
+	 * @return this
+	 */
+	public $ dblclick()
+	{
+		for (Component view : this.views)
+		{
+			for (MouseListener ml : view.getMouseListeners())
+			{
+				ml.mousePressed(new MouseEvent(view, 0, 0, 0, view.getWidth()/2, view.getHeight()/2, 2, false));
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * Invokes the given Function every time each view in the current selection is long-clicked. 
+	 * The only parameter passed to the given function a javaQuery instance with the long-clicked view.
+	 * @param function the function to call when this view is long-clicked
+	 * @return this
+	 */
+	public $ dblclick(final Function function)
+	{
+		for (final Component view : this.views)
+		{
+			view.addMouseListener(new MouseListener() {
+
+				@Override
+				public void mouseClicked(MouseEvent e) {
+					if (e.getClickCount() == 2)
+						function.invoke($.with(view));
+				}
+
+				@Override
+				public void mouseEntered(MouseEvent e) {}
+
+				@Override
+				public void mouseExited(MouseEvent e) {}
+
+				@Override
+				public void mousePressed(MouseEvent e) {}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {}
+				
+			});
+		}
+		return this;
+	}
+	
+	/**
+	 * Invokes the given Function for long-click events on the views in the current selection. 
+	 * The function will receive two arguments:
+	 * <ol>
+	 * <li>a javaQuery containing the long-clicked view
+	 * <li>{@code eventData}
+	 * </ol>
+	 * @param eventData the second argument to pass to the {@code function}
+	 * @param function the function to invoke
+	 * @return
+	 */
+	public $ dblclick(final Object eventData, final Function function)
+	{
+		for (final Component view : this.views)
+		{
+			view.addMouseListener(new MouseListener() {
+
+				@Override
+				public void mouseClicked(MouseEvent e) {
+					if (e.getClickCount() == 2)
+						function.invoke($.with(view), eventData);
+				}
+
+				@Override
+				public void mouseEntered(MouseEvent e) {}
+
+				@Override
+				public void mouseExited(MouseEvent e) {}
+
+				@Override
+				public void mousePressed(MouseEvent e) {}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {}
+				
+			});
+		}
+		return this;
+	}
+	
+
+	/**
+	 * Handles swipe events. This will override any onTouchListener added.
+	 * @param function will receive this javaQuery and a {@link SwipeDetector.Direction} corresponding
+	 * to the direction of the swipe.
+	 * @return this
+	 */
+	public $ swipe(Function function)
+	{
+		swipe = function;
+		setupSwipeListener();
+		return this;
+	}
+	
+	/**
+	 * Sets the function that is called when the user swipes Up. This will cause any function set by
+	 * {@link #swipe(Function)} to not get called for up events.
+	 * @param function the function to invoke
+	 * @return this
+	 */
+	public $ swipeUp(Function function)
+	{
+		swipeUp = function;
+		setupSwipeListener();
+		return this;
+	}
+	
+	/**
+	 * Sets the function that is called when the user swipes Left. This will cause any function set by
+	 * {@link #swipe(Function)} to not get called for left events.
+	 * @param function the function to invoke
+	 * @return this
+	 */
+	public $ swipeLeft(Function function)
+	{
+		swipeLeft = function;
+		setupSwipeListener();
+		return this;
+	}
+	
+	/**
+	 * Sets the function that is called when the user swipes Down. This will cause any function set by
+	 * {@link #swipe(Function)} to not get called for down events.
+	 * @param function the function to invoke
+	 * @return this
+	 */
+	public $ swipeDown(Function function)
+	{
+		swipeDown = function;
+		setupSwipeListener();
+		return this;
+	}
+	
+	/**
+	 * Sets the function that is called when the user swipes Right. This will cause any function set by
+	 * {@link #swipe(Function)} to not get called for right events.
+	 * @param function the function to invoke
+	 * @return this
+	 */
+	public $ swipeRight(Function function)
+	{
+		swipeRight = function;
+		setupSwipeListener();
+		return this;
+	}
+	
+	/**
+	 * Triggers a swipe-up event on the current selection
+	 * @return this
+	 */
+	public $ swipeUp()
+	{
+		if (swiper != null)
+			swiper.performSwipeUp();
+		return this;
+	}
+	
+	/**
+	 * Triggers a swipe-down event on the current selection
+	 * @return this
+	 */
+	public $ swipeDown()
+	{
+		if (swiper != null)
+			swiper.performSwipeDown();
+		return this;
+	}
+	
+	/**
+	 * Triggers a swipe-left event on the current selection
+	 * @return this
+	 */
+	public $ swipeLeft()
+	{
+		if (swiper != null)
+			swiper.performSwipeLeft();
+		return this;
+	}
+	
+	/**
+	 * Triggers a swipe-right event on the current selection
+	 * @return this
+	 */
+	public $ swipeRight()
+	{
+		if (swiper != null)
+			swiper.performSwipeRight();
+		return this;
+	}
+	
+	/**
+	 * Sets the function to call when a view in the current selection has gained focus. This function
+	 * will receive an instance of javaQuery for this view as its only parameter
+	 * @param function the function to invoke
+	 * @return this
+	 */
+	public $ focus(Function function)
+	{
+		onFocus = function;
+		setupFocusListener();//fixes any changes to the onfocuschanged listener
+		return this;
+	}
+	
+	/**
+	 * Gives focus to the first focusable view in the current selection.
+	 * @return this
+	 */
+	public $ focus()
+	{
+		for (Component view : this.views)
+		{
+			view.requestFocus();
+			if (view.hasFocus()) {
+				break;
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * Sets the function to call when this {@link #view} loses focus.
+	 * @param function the function to invoke. Will receive a javaQuery instance containing
+	 * the view as its only parameter
+	 * @return this
+	 */
+	public $ focusout(Function function)
+	{
+		offFocus = function;
+		setupFocusListener();
+		return this;
+	}
+	
+	/**
+	 * Removes focus from all views in the current selection.
+	 * @return this
+	 */
+	public $ focusout()
+	{
+		for (Component view : this.views)
+		{
+			view.setFocusable(false);
+			view.setFocusable(true);
+		}
+		return this;
+	}
+	
+	/**
+	 * Set the function to call when a key-down event has been detected on this view.
+	 * @param function the Function to invoke. Receives a javaQuery containing the responding view
+	 * and two variable arguments:
+	 * <ol>
+	 * <li>the Integer key code
+	 * <li>the {@link KeyEvent} Object that was produced
+	 * </ol>
+	 * @return this
+	 */
+	public $ keydown(Function function)
+	{
+		keyDown = function;
+		setupKeyListener();
+		return this;
+	}
+	
+	/**
+	 * Set the function to call when a key-press event has been detected on this view.
+	 * @param function the Function to invoke. Receives a javaQuery containing the responding view
+	 * and two variable arguments:
+	 * <ol>
+	 * <li>the Integer key code
+	 * <li>the {@link KeyEvent} Object that was produced
+	 * </ol>
+	 * @return this
+	 */
+	public $ keypress(Function function)
+	{
+		keyPress = function;
+		setupKeyListener();
+		return this;
+	}
+	
+	/**
+	 * Set the function to call when a key-up event has been detected on this view.
+	 * @param function the Function to invoke. Receives a javaQuery containing the responding view
+	 * and two variable arguments:
+	 * <ol>
+	 * <li>the Integer key code
+	 * <li>the {@link KeyEvent} Object that was produced
+	 * </ol>
+	 * @return this
+	 */
+	public $ keyup(Function function)
+	{
+		keyUp = function;
+		setupKeyListener();
+		return this;
+	}
+	
+	/////Miscellaneous
+	
+	/**
+	 * Invokes the given function for each view in the current selection. Function receives a 
+	 * javaQuery instance containing the single view, and an integer of the current index
+	 * @param function the function to invoke
+	 * @return this
+	 */
+	public $ each(Function function)
+	{
+		for (int i = 0; i < views.size(); i++)
+		{
+			function.invoke($.with(views.get(i)), i);
+		}
+		return this;
+	}
+	
+	/**
+	 * If the first view of the current selection is a subclass of {@link AdapterView}, this will loop through all the 
+	 * adapter data and invoke the given function, passing the varargs:
+	 * <ol>
+	 * <li>the item from the adapter
+	 * <li>the index
+	 * </ol>
+	 * Otherwise, if the first view in the current selection is a subclass of {@link Container}, {@code each} will
+	 * loop through all the child views, and wrap each one in a javaQuery object. The invoked
+	 * function will receive it, and an int for the index of the selected child view.
+	 * @param function Function the function to invoke
+	 * @return this
+	 */
+	public $ children(Function function)
+	{
+		if (view(0) instanceof Container)
+		{
+			Container group = (Container) view(0);
+			for (int i = 0; i < group.getComponentCount(); i++)
+			{
+				function.invoke($.with(group.getComponent(i)), i);
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * Loops through all the sibling views of the first view in the current selection, and wraps 
+	 * each in a javaQuery object. When invoked, the given function will receive two parameters:
+	 * <ol>
+	 * <li>the javaQuery for the view
+	 * <li>the child index of the sibling
+	 * </ol>
+	 * @param function receives the javaQuery for the view, and the index for arg1
+	 */
+	public $ siblings(Function function)
+	{
+		Component parent = view(0).getParent();
+		if (parent != null && parent instanceof Container)
+		{
+			Container group = (Container) parent;
+			for (int i = 0; i < group.getComponentCount(); i++)
+			{
+				function.invoke($.with(group.getComponent(i)), i);
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * Gets all the views in the current selection after the given start index
+	 * @param start the starting position of the views to pass to the new instance of javaQuery.
+	 * @return a javaQuery object containing the views from {@code start} to the end of the list.
+	 */
+	public $ slice(int start)
+	{
+		return $.with(this.views.subList(start, this.views.size()));
+	}
+	
+	/**
+	 * Gets all the views in the current selection after the given start index and before the given
+	 * end index
+	 * @param start the starting position of the views to pass to the new instance of javaQuery.
+	 * @return a javaQuery object containing the views from {@code start} to {@code end}.
+	 */
+	public $ slice(int start, int end)
+	{
+		return $.with(this.views.subList(start, end));
+	}
+	
+	/** @return the number of views that are currently selected */
+	public int length()
+	{
+		return this.views.size();
+	}
+	
+	/** @return the number of views that are currently selected */
+	public int size()
+	{
+		return length();
+	}
+	
+	/**
+	 * Checks to see if the first view in the current selection is a subclass of the given class name
+	 * @param className the name of the superclass to check
+	 * @return {@code true} if the view is a subclass of the given class name. 
+	 * Otherwise, {@code false}.
+	 */
+	public boolean is(String className)
+	{
+		try
+		{
+			Class<?> clazz = Class.forName(className);
+			if (clazz.isInstance(view(0)))
+				return true;
+			return false;
+		}
+		catch (Throwable t)
+		{
+			return false;
+		}
+	}
+	
+	/**
 	 * Checks to see if the given Object is a subclass of the given class name
 	 * @param obj the Object to check
 	 * @param className the name of the superclass to check
@@ -189,6 +1331,345 @@ public class $
 			return false;
 		}
 	}
+	
+
+	/**
+	 * Removes each view in the current selection from the layout
+	 */
+	public void remove()
+	{
+		for (Component view : this.views)
+		{
+			Component parent = view.getParent();
+			if (parent != null && parent instanceof Container)
+			{
+				((Container) parent).remove(view);
+			}
+		}
+		
+	}
+	
+	/////Selectors
+	
+	/**
+	 * Recursively selects all subviews of the given view
+	 * @param v the parent view of all the suclasses to select
+	 * @return a list of all views that are subviews in the 
+	 * view hierarchy with the given view as the root
+	 */
+	private List<Component> recursivelySelectAllSubViews(Component v)
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (v instanceof Container)
+		{
+			for (int i = 0; i < ((Container) v).getComponentCount(); i++)
+			{
+				list.addAll(recursivelySelectAllSubViews(((Container) v).getComponent(i)));
+			}
+		}
+		list.add(v);
+		return list;
+	}
+	
+	/**
+	 * Recursively selects all subviews of the given view that are subclasses of the given Object type
+	 * @param v the parent view of all the suclasses to select
+	 * @return a list of all views that are subviews in the 
+	 * view hierarchy with the given view as the root
+	 */
+	private List<Component> recursivelySelectByType(Component v, Class<?> clazz)
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (v instanceof Container)
+		{
+			for (int i = 0; i < ((Container) v).getComponentCount(); i++)
+			{
+				list.addAll(recursivelySelectByType(((Container) v).getComponent(i), clazz));
+			}
+		}
+		if (clazz.isInstance(v))
+			list.add(v);
+		return list;
+	}
+	
+	/**
+	 * Select all subviews of the currently-selected views
+	 * @return a javaQuery Object with all the views
+	 */
+	public $ selectAll()
+	{
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectAllSubViews(view));
+		}
+		return $.with(subviews);
+	}
+	
+	/**
+	 * Select all subviews of the currently-selected views that are subclasses of the given {@code className}. 
+	 * @param className
+	 * @return all the selected views in a javaQuery wrapper
+	 */
+	public $ selectByType(String className)
+	{
+		Class<?> clazz = null;
+		try
+		{
+			clazz = Class.forName(className);
+		}
+		catch (Throwable t)
+		{
+			return null;
+		}
+		
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectByType(view, clazz));
+		}
+		return $.with(subviews);
+		
+	}
+	
+	/**
+	 * Selects the child views of the first view in the current selection
+	 * @return a javaQuery Objects containing the child views. If the view is a subclass of 
+	 * {@link AdapterView}, the {@link #data() data} of the javaQuery will be set to an Object[]
+	 * of adapter items.
+	 */
+	public $ selectChildren()
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (view(0) instanceof Container)
+		{
+			for (int i = 0; i < ((Container) view(0)).getComponentCount(); i++)
+			{
+				list.add(((Container) view(0)).getComponent(i));
+			}
+		}
+		return $.with(list);
+	}
+	
+	/**
+	 * Selects all subviews of the given view that do not contain subviews
+	 * @param v the view whose subviews will be retrieved
+	 * @return a list empty views
+	 */
+	private List<Component> recursivelySelectEmpties(Component v)
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (v instanceof Container && ((Container) v).getComponentCount() > 0)
+		{
+			for (int i = 0; i < ((Container) v).getComponentCount(); i++)
+			{
+				list.addAll(recursivelySelectEmpties(((Container) v).getComponent(i)));
+			}
+		}
+		else
+		{
+			list.add(v);
+		}
+		return list;
+	}
+	
+	/**
+	 * Select all non-Containers, or Containers with no children, that lay within the view
+	 * hierarchy of the current selection
+	 * @return a javaQuery object containing the selection
+	 */
+	public $ selectEmpties()
+	{
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectEmpties(view));
+		}
+		return $.with(subviews);
+	}
+	
+	/**
+	 * Searches the view hierarchy rooted at the given view in order to find the currently
+	 * selected view
+	 * @param view the view to search within
+	 * @return the selected view, or null if no view in the given hierarchy was found.
+	 */
+	private Component recursivelyFindSelectedSubView(Component view)
+	{
+		if (view.hasFocus())
+			return view;
+		else if (view instanceof Container)
+		{
+			Component v = null;
+			for (int i = 0; i < ((Container) view).getComponentCount(); i++)
+			{
+				v = recursivelyFindSelectedSubView(((Container) view).getComponent(i));
+				if (v != null)
+					return v;
+			}
+			return null;
+		}
+		else
+			return null;
+	}
+	
+	/**
+	 * Selects the currently-focused view.
+	 * @return a javaQuery Object created with the currently-selected View, if there is one
+	 */
+	public $ selectFocused()
+	{
+		Component focused = recursivelyFindSelectedSubView(rootView);
+		if (focused != null)
+			return $.with(focused);
+		for (Component view : this.views)
+		{
+			focused = recursivelyFindSelectedSubView(view);
+			if (focused != null)
+				return $.with(focused);
+		}
+		
+		return $.with(view(0));
+	}
+	
+	/**
+	 * Select all {@link View#INVISIBLE invisible}, {@link View#GONE gone}, and 0-alpha views within the 
+	 * view hierarchy rooted at the given view
+	 * @param v the view hierarchy in which to search
+	 * @return a list the found views
+	 */
+	private List<Component> recursivelySelectHidden(Component v)
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (v instanceof Container)
+		{
+			for (int i = 0; i < ((Container) v).getComponentCount(); i++)
+			{
+				list.addAll(recursivelySelectHidden(((Container) v).getComponent(i)));
+			}
+		}
+		if (!v.isVisible() || v.isOpaque())
+			list.add(v);
+		return list;
+	}
+	
+	/**
+	 * Select all {@link View#VISIBLE visible} and 1-alpha views within the given view hierarchy
+	 * @param v the view to search in
+	 * @return a list the found views
+	 */
+	private List<Component> recursivelySelectVisible(Component v)
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (v instanceof Container)
+		{
+			for (int i = 0; i < ((Container) v).getComponentCount(); i++)
+			{
+				list.addAll(recursivelySelectVisible(((Container) v).getComponent(i)));
+			}
+		}
+		if (v.isVisible() || !v.isOpaque())
+			list.add(v);
+		return list;
+	}
+	
+	/**
+	 * Select all {@link View#INVISIBLE invisible}, {@link View#GONE gone}, and 0-alpha views within 
+	 * the view hierarchy of the currently selected views
+	 * @return a javaQuery Object containing the found views
+	 */
+	public $ selectHidden()
+	{
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectHidden(view));
+		}
+		return $.with(subviews);
+	}
+	
+	/**
+	 * Select all {@link View#VISIBLE visible} and 1-alpha views within the view hierarchy
+	 * of the currenly selected views
+	 * @return a javaQuery Object containing the found views
+	 */
+	public $ selectVisible()
+	{
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectVisible(view));
+		}
+		return $.with(subviews);
+	}
+	
+	/**
+	 * Set the current selection to the view with the given name
+	 * @param name the name of the view to manipulate
+	 * @return this
+	 */
+	public $ name(String name)
+	{
+		Component view = this.findComponentWithName(name);
+		if (view != null)
+		{
+			this.views.clear();
+			this.rootView = view;
+			this.views.add(view);
+		}
+		return this;
+	}
+
+	/**
+	 * Selects all views within the given current selection that are the single 
+	 * children of their parent views
+	 * @param v the view whose hierarchy will be checked
+	 * @return a list of the found views.
+	 */
+	private List<Component> recursivelySelectOnlyChilds(Component v)
+	{
+		List<Component> list = new ArrayList<Component>();
+		if (v instanceof Container)
+		{
+			for (int i = 0; i < ((Container) v).getComponentCount(); i++)
+			{
+				list.addAll(recursivelySelectOnlyChilds(((Container) v).getComponent(i)));
+			}
+		}
+		if (v.getParent() instanceof Container && ((Container) v.getParent()).getComponentCount() == 1)
+			list.add(v);
+		return list;
+	}
+	
+	/**
+	 * Selects all views within the current selection that are the single children of their 
+	 * parent views
+	 * @return a javaQuery Object containing the found views.
+	 */
+	public $ selectOnlyChilds()
+	{
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectOnlyChilds(view));
+		}
+		return $.with(subviews);
+	}
+	
+	/**
+	 * Selects all views in the current selection that can contain other child views
+	 * @return a javaQuery Object containing the found Containers
+	 */
+	public $ selectParents()
+	{
+		List<Component> subviews = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			subviews.addAll(recursivelySelectByType(view, Container.class));
+		}
+		return $.with(subviews);
+	}
+	
 	
 	/////Extensions
 	
@@ -274,9 +1755,9 @@ public class $
 	 * @param append {@code true} to append the new data to the end of the file. {@code false} to overwrite any existing file.
 	 * @param async {@code true} if the operation should be performed asynchronously. Otherwise, {@code false}.
 	 */
-	public void write(byte[] s, String fileName, boolean append)
+	public static void write(byte[] s, String fileName, boolean append)
 	{
-		write(s, fileName, append, $.noop(), $.noop());
+		write(s, fileName, append, null, null);
 		
 	}
 	
@@ -287,7 +1768,7 @@ public class $
 	 * @param append {@code true} to append the new String to the end of the file. {@code false} to overwrite any existing file.
 	 * @param async {@code true} if the operation should be performed asynchronously. Otherwise, {@code false}.
 	 */
-	public void write(String s, String fileName, boolean append)
+	public static void write(String s, String fileName, boolean append)
 	{
 		write(s.getBytes(), fileName, append, null, null);
 		
@@ -310,12 +1791,14 @@ public class $
 	 * <li>the String reason
 	 * </ol>
 	 */
-	public void write(final String s, final String fileName, boolean append, final Function success, Function error)
+	@SuppressWarnings("unchecked")
+	public static void write(final String s, final String fileName, boolean append, final String notifySuccess, String notifyError)
 	{
 		File file = new File(fileName);
 		if (!file.canWrite())
 		{
-			error.invoke(this, s, "You do not have file write privelages");
+			if (notifyError != null)
+				EventCenter.trigger(null, notifyError, (Map<String, Object>) $.map($.entry("data", s.getBytes()), $.entry("message", "You do not have file write privelages")), null);
 			return;
 		}
 		try {
@@ -328,10 +1811,12 @@ public class $
 			{
 				writer.write(s);
 			}
-			success.invoke(this, s, "Success");
+			if (notifySuccess != null)
+				EventCenter.trigger(null, notifySuccess, (Map<String, Object>) $.map($.entry("data", s.getBytes()), $.entry("message", "Success")), null);
 		} catch (Throwable t)
 		{
-			error.invoke(this, s, "IO Error");
+			if (notifyError != null)
+				EventCenter.trigger(null, notifyError, (Map<String, Object>) $.map($.entry("data", s.getBytes()), $.entry("message", "IO Error")), null);
 		}
 	}
 	
@@ -341,20 +1826,20 @@ public class $
 	 * @param path defines the save location of the file
 	 * @param append {@code true} to append the new bytes to the end of the file. {@code false} to overwrite any existing file.
 	 * @param async {@code true} if the operation should be performed asynchronously. Otherwise, {@code false}.
-	 * @param success Function to invoke on a successful file-write. Parameters received will be:
+	 * @param notifySuccess Notification to post with parameters on a successful file write. Parameters received will be:
 	 * <ol>
-	 * <li>the byte[] to write
-	 * <li>the path to the file
+	 * <li>"data" : the byte[] to write
+	 * <li>"message" : a message
 	 * </ol>
-	 * @param error Function to invoke on a file I/O error. Parameters received will be:
+	 * @param notifyError. Notification to post with parameters on a failed file write. Parameters received will be:
 	 * <ol>
-	 * <li>the byte[] to write
-	 * <li>the path to the file
+	 * <li>"data" : the byte[] to write
+	 * <li>"message" : a message
 	 * </ol>
 	 */
-	public void write(final byte[] s, String fileName, boolean append, final Function success, Function error)
+	public static void write(final byte[] s, String fileName, boolean append, String notifySuccess, String notifyError)
 	{
-		write(new String(s), fileName, append, success, error);
+		write(new String(s), fileName, append, notifySuccess, notifyError);
 	}
 	
 	////Utilities
@@ -808,6 +2293,361 @@ public class $
 		AjaxTask.killTasks();
 	}
 	
+	/**
+	 * Load data from the server and place the returned HTML into the matched element
+	 * @param url A string containing the URL to which the request is sent.
+	 * @param data A plain object or string that is sent to the server with the request.
+	 * @param complete A callback function that is executed when the request completes. Will receive
+	 * two arguments: 1. response text, 2. text status
+	 */
+	public void load(String url, Object data, final Function complete)
+	{
+		$.ajax(new AjaxOptions().url(url).data(data).complete(new Function() {
+
+			@Override
+			public void invoke($ javaQuery, Object... params) {
+				$.this.html(params[0].toString());
+				complete.invoke($.this, params);
+			}
+			
+		}));
+	}
+	
+
+	//// Convenience
+	
+	/**
+	 * Include the html string the selected views. If a view has a setText method, it is used. Otherwise,
+	 * a new TextView is created. This html can also handle image tags for both urls and local files.
+	 * Local files should be the name (for example, for R.id.ic_launcher, just use ic_launcher).
+	 * @param html the HTML String to include
+	 */
+	public $ html(String html)
+	{
+		for (Component view : this.views)
+		{
+			try
+			{
+				Method m = view.getClass().getMethod("setText", new Class<?>[]{String.class});
+				m.invoke(view, html);
+			}
+			catch (Throwable t)
+			{
+				if (view instanceof Container)
+				{
+					try
+					{
+						//no setText method. Try a TextView
+						JLabel label = new JLabel();
+						int rgba = Color.HSBtoRGB(0, 0, 0);
+						rgba |= (0 & 0xff);
+						label.setBackground(new Color(rgba, true));
+						label.setBounds(label.getParent().getBounds());
+						((Container) view).add(label);
+						label.setText(html);
+					}
+					catch (Throwable t2)
+					{
+						//unable to set content
+						Log.w("javaQuery", "unable to set HTML content");
+					}
+				}
+				else
+				{
+					//unable to set content
+					Log.w("javaQuery", "unable to set textual content");
+				}
+			}
+		}
+		
+		return this;
+	}
+	
+	/**
+	 * Includes the given text string inside of the selected views. If a view has a setText method, it is used
+	 * otherwise, if possible, a textview is added as a child to display the text.
+	 * @param text the text to include
+	 */
+	public $ text(String text)
+	{
+		for (Component view : this.views)
+		{
+			try
+			{
+				Method m = view.getClass().getMethod("setText", new Class<?>[]{String.class});
+				m.invoke(view, text);
+			}
+			catch (Throwable t)
+			{
+				if (view instanceof Container)
+				{
+					try
+					{
+						//no setText method. Try a TextView
+						JLabel label = new JLabel();
+						int rgba = Color.HSBtoRGB(0, 0, 0);
+						rgba |= (0 & 0xff);
+						label.setBackground(new Color(rgba, true));
+						label.setBounds(label.getParent().getBounds());
+						((Container) view).add(label);
+						label.setText(text);
+					}
+					catch (Throwable t2)
+					{
+						//unable to set content
+						Log.w("javaQuery", "unable to set textual content");
+					}
+				}
+				else
+				{
+					//unable to set content
+					Log.w("javaQuery", "unable to set textual content");
+				}
+			}
+		}
+		
+		return this;
+	}
+	
+	/**
+	 * Includes the given image inside of the selected views. If a view is an `ImageView`, its image
+	 * is set. Otherwise, the background image of the view is set.
+	 * @param image the drawable image to include
+	 * @return this
+	 */
+	public $ image(Image image)
+	{
+		for (Component v : views)
+		{
+			if (v instanceof JLabel)
+			{
+				((JLabel) v).setIcon(new ImageIcon(image));
+			}
+			else if (v instanceof Window)
+			{
+				((Window) v).setIconImage(image);
+			}
+			else
+			{
+				if (v instanceof Container)
+				{
+					JLabel l = new JLabel(new ImageIcon(image));
+					l.setBounds(v.getBounds());
+					((Container) v).add(l);
+				}
+				else if (v.getParent() != null && v.getParent() instanceof Container)
+				{
+					JLabel l = new JLabel(new ImageIcon(image));
+					l.setBounds(v.getBounds());
+					((Container) v.getParent()).add(l);
+				}
+				
+				
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * For `ImageView`s, this will set the image to the given asset or url. Otherwise, it will set the
+	 * background image for the selected views.
+	 * @param source asset path, file path (starting with "file://") or URL to image
+	 * @return this
+	 */
+	public $ image(String source)
+	{
+		return image(source, -1, -1, null);
+	}
+	
+	/**
+	 * For `ImageView`s, this will set the image to the given asset or url. Otherwise, it will set the
+	 * background image for the selected views.
+	 * @param source asset path, file path (starting with "file://") or URL to image
+	 * @param width specifies the output bitmap width
+	 * @param height specifies the output bitmap height
+	 * @param error if the given source is a file or asset, this receives a javaQuery wrapping the 
+	 * current context and the {@code Throwable} error. Otherwise, this will receive an
+	 * Ajax error.
+	 * @return this
+	 * @see AjaxOptions#error(Function)
+	 */
+	public $ image(String source, int width, int height, Function error)
+	{
+		if (source.startsWith("file://"))
+		{
+			try {
+				Image image = ImageIO.read(new File(source.substring(7)));
+				
+				for (Component v : views)
+				{
+					if (v instanceof JLabel)
+					{
+						((JLabel) v).setIcon(new ImageIcon(image));
+					}
+					else if (v instanceof Window)
+					{
+						((Window) v).setIconImage(image);
+					}
+					else
+					{
+						if (v instanceof Container)
+						{
+							JLabel l = new JLabel(new ImageIcon(image));
+							l.setBounds(v.getBounds());
+							((Container) v).add(l);
+						}
+						else if (v.getParent() != null && v.getParent() instanceof Container)
+						{
+							JLabel l = new JLabel(new ImageIcon(image));
+							l.setBounds(v.getBounds());
+							((Container) v.getParent()).add(l);
+						}
+						
+						
+					}
+				}
+			}
+			catch(Throwable t) {
+				if (error != null) {
+					error.invoke($.with(view(0)), t);
+				}
+			}
+		}
+		else
+		{
+			boolean fallthrough = false;
+			try {
+				new URL(source);
+			}
+			catch (Throwable t)
+			{
+				fallthrough = true;
+			}
+			if (fallthrough)
+			{
+				AjaxOptions options = new AjaxOptions().url(source)
+						                               .type("GET")
+						                               .dataType("image")
+						                               .context(view(0))
+						                               .global(false)
+						                               .success(new Function() {
+					@Override
+					public void invoke($ javaQuery, Object... params) {
+						Image image = (Image) params[0];
+						for (Component v : views)
+						{
+							if (v instanceof JLabel)
+							{
+								((JLabel) v).setIcon(new ImageIcon(image));
+							}
+							else if (v instanceof Window)
+							{
+								((Window) v).setIconImage(image);
+							}
+							else
+							{
+								if (v instanceof Container)
+								{
+									JLabel l = new JLabel(new ImageIcon(image));
+									l.setBounds(v.getBounds());
+									((Container) v).add(l);
+								}
+								else if (v.getParent() != null && v.getParent() instanceof Container)
+								{
+									JLabel l = new JLabel(new ImageIcon(image));
+									l.setBounds(v.getBounds());
+									((Container) v.getParent()).add(l);
+								}
+								
+								
+							}
+						}
+					}
+				});
+				
+				if (error != null) {
+					options.error(error);
+				}
+				if (width >= 0)
+				{
+					options.imageWidth(width);
+				}
+				if (height >= 0)
+				{
+					options.imageHeight(height);
+				}
+				$.ajax(options);
+			}
+		}
+		return this;
+	}
+	
+	/**
+	 * Iterates through the selected views and sets the images to the given images (in order)
+	 * @param source asset path, file path (starting with "file://") or URL to image
+	 * @return this
+	 */
+	public $ image(final List<String> sources)
+	{
+		this.each(new Function() {
+			@Override
+			public void invoke($ javaQuery, Object... params) {
+				javaQuery.image(sources.get((Integer) params[0]));
+			}
+		});
+		return this;
+	}
+	
+	/**
+	 * Iterates through the selected views and sets the images to the given images (in order)
+	 * @param sources the file paths or URLs to set
+	 * @param width the output width of the image
+	 * @param height the output height of the image
+	 * @param error if the given source is a file or asset, this receives a javaQuery wrapping the 
+	 * current context and the {@code Throwable} error. Otherwise, this will receive an
+	 * Ajax error.
+	 * @return this
+	 * @see AjaxOptions#error(Function)
+	 */
+	public $ image(final List<String> sources, final int width, final int height, final Function error)
+	{
+		this.each(new Function() {
+			@Override
+			public void invoke($ javaQuery, Object... params) {
+				javaQuery.image(sources.get((Integer) params[0]), width, height, error);
+			}
+		});
+		return this;
+	}
+	
+
+	/**
+	 * Show an alert.
+	 * @param text the message to display.
+	 * @see #alert(String, String)
+	 */
+	public static void alert(String text)
+	{
+		alert(null, text);
+	}
+	
+	/**
+	 * Show an alert
+	 * @param context used to display the alert window
+	 * @param title the title of the alert window. Use {@code null} to show no title
+	 * @param text the alert message
+	 * @see #alert(String)
+	 */
+	public static void alert(String title, String text)
+	{
+		JDialog alert = new JDialog();
+		if (title != null)
+			alert.setTitle(title);
+		if (text != null)
+			alert.add(new JLabel(text, JLabel.CENTER));
+		alert.setVisible(true);
+	}
+	
 	////Callbacks
 	
 	/**
@@ -815,11 +2655,106 @@ public class $
 	 * Registered callback functions will receive a {@code null} for their <em>javaQuery</em>
 	 * variable. To receive a non-{@code null} variable, you must provide a <em>Context</em>.
 	 * @return a new instance of {@link Callbacks}
-	 * @see #Callbacks(Context)
 	 */
 	public static Callbacks Callbacks()
 	{
 		return new Callbacks();
+	}
+	
+	//////CSS-based
+	
+	/**
+	 * @return the computed height for the first view in the current selection
+	 */
+	public int height()
+	{
+		return view(0).getHeight();
+	}
+	
+	/**
+	 * Set the height of the selected views
+	 * @param height the new height
+	 * @return this
+	 */
+	public $ height(int height)
+	{
+		for (Component view : this.views)
+		{
+			Rectangle bounds = view.getBounds();
+			bounds.height = height;
+			view.setBounds(bounds);
+		}
+		return this;
+	}
+	
+	/**
+	 * @return the computed width for the first view in the current selection
+	 */
+	public int width()
+	{
+		return view(0).getWidth();
+	}
+	
+	/**
+	 * Set the width of the views in the current selection
+	 * @param width the new width
+	 * @return this
+	 */
+	public $ width(int width)
+	{
+		for (Component view : this.views)
+		{
+			Rectangle bounds = view.getBounds();
+			bounds.width = width;
+			view.setBounds(bounds);
+		}
+		return this;
+	}
+	
+	/**
+	 * @return the coordinates of the first view in the current selection.
+	 */
+	public Point offset()
+	{
+		return new Point(view(0).getBounds().x, view(0).getBounds().y);
+	}
+	
+	/**
+	 * Set the coordinates of each selected view, relative to the document.
+	 * @param x the x-coordinate, in pixels
+	 * @param y the y-coordinate, in pixels
+	 * @return this
+	 */
+	public $ offset(int x, int y)
+	{
+		return position(x, y);
+	}
+	
+	/**
+	 * @return the coordinates of the first view in the current selection, 
+	 * relative to the offset parent.
+	 */
+	public Point position()
+	{
+		return new Point(view(0).getX(), view(0).getY());
+	}
+	
+	/**
+	 * Sets the coordinates of each selected view, relative to its offset parent
+	 * @param x the x-coordinate
+	 * @param y the y-coordinate
+	 * @return 
+	 */
+	public $ position(int x, int y)
+	{
+		for (Component view : this.views)
+		{
+			Rectangle bounds = view.getBounds();
+			bounds.x = x;
+			bounds.y = y;
+			view.setBounds(bounds);
+		}
+		return this;
 	}
 	
 	//Timer Functions
@@ -864,5 +2799,21 @@ public class $
 			
 		}, 0, delay);
 		return t;
+	}
+	
+	/** 
+	 * Capitalizes the first letter of the given string.
+	 * @param string the string whose first letter should be capitalized
+	 * @return the given string with its first letter capitalized
+	 * @throws NullPointerException if the string is null or empty
+	 */
+	private String capitalize(String string)
+	{
+		if (string == null || string.trim().length() == 0)
+			throw new NullPointerException("Cannot handle null or empty string");
+		
+		StringBuilder strBuilder = new StringBuilder(string);
+		strBuilder.setCharAt(0, Character.toUpperCase(strBuilder.charAt(0)));
+		return strBuilder.toString();
 	}
 }

@@ -16,6 +16,7 @@
 
 package self.philbrown.javaQuery;
 
+import java.awt.Container;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,20 +47,28 @@ public class Callbacks
 	/** The variable to pass as the javaQuery argument to Callback Functions. May be {@code null}. */
 	private $ javaQuery;
 
-	/**
+	/** 
 	 * Constructor 
-	 * @param context used to create the {@link self.philbrown.javaQuery.$ javaQuery} Object
-	 * that will be passed to callback functions
 	 */
 	public Callbacks()
 	{
 		functions = new ArrayList<Function>();
-		this.javaQuery = new $();
 	}
 	
 	/**
 	 * Constructor 
-	 * @param javaQuery the <em>javaQuery</em> Object that will be passed to callback functions
+	 * @param context used to create the {@link self.philbrown.droidQuery.$ droidQuery} Object
+	 * that will be passed to callback functions
+	 */
+	public Callbacks(Container context)
+	{
+		this();
+		this.javaQuery = $.with(context);
+	}
+	
+	/**
+	 * Constructor 
+	 * @param droidQuery the <em>droidQuery</em> Object that will be passed to callback functions
 	 */
 	public Callbacks($ javaQuery)
 	{
@@ -81,10 +90,22 @@ public class Callbacks
 		if (opt.unique())
 			this.unique = true;
 	}
+	
+	/**
+	 * Constructor 
+	 * @param context used to create the {@link self.philbrown.droidQuery.$ droidQuery} Object
+	 * that will be passed to callback functions
+	 * @param opt the Callbacks Options
+	 */
+	public Callbacks(Container context, CallbacksOptions opt)
+	{
+		this(opt);
+		this.javaQuery = $.with(context);
+	}
 
 	/**
 	 * Constructor 
-	 * @param javaQuery the <em>javaQuery</em> Object that will be passed to callback functions
+	 * @param droidQuery the <em>droidQuery</em> Object that will be passed to callback functions
 	 * @param opt the Callbacks Options
 	 */
 	public Callbacks($ javaQuery, CallbacksOptions opt)

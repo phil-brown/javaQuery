@@ -26,6 +26,8 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.swing.JFrame;
+
 /**
  * Defines a Script, which consists of lines of commands
  * @author Phil Brown
@@ -100,10 +102,9 @@ public class Script
 	{
 		File file = File.createTempFile("script", ".tmp");
 		
-		$ javaQuery = new $();
 		for (String s : getCommands())
 		{
-			javaQuery.write(s.getBytes(), file.getName(), true);
+			$.write(s.getBytes(), file.getName(), true);
 		}
 		file.setExecutable(true);
 		

@@ -16,6 +16,7 @@
 
 package self.philbrown.javaQuery;
 
+import java.awt.Component;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -26,7 +27,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import javax.naming.Context;
 import javax.xml.parsers.SAXParser;
 
 import org.apache.commons.codec.binary.Base64;
@@ -179,13 +179,13 @@ public class AjaxOptions
 	/**
 	 * Used to set get or change the current context
 	 */
-	private Context context;
+	private Component context;
 	
 	/**
 	 * Get the context
 	 * @return the context
 	 */
-	public Context context() { return context; }
+	public Component context() { return context; }
 	
 	/**
 	 * Set the context. Setting this to a non-{@code null} value will allow the callback Functions
@@ -194,7 +194,7 @@ public class AjaxOptions
 	 * @param context
 	 * @return this
 	 */
-	public AjaxOptions context(Context context)
+	public AjaxOptions context(Component context)
 	{
 		this.context = context;
 		return this;
@@ -284,7 +284,7 @@ public class AjaxOptions
 	 * "script": Evaluates the response as bourne (NOT bash) script and returns it as plain text. 
 	 * "json": Evaluates the response as JSON and returns a JSONObject object. The JSON data is parsed in a strict manner; any malformed JSON is rejected and a parse error is thrown. (See json.org for more information on proper JSON formatting.)
 	 * "text": A plain text string.
-	 * "image" : returns a bitmap object
+	 * "image" : returns a Image object
 	 * @note if Script is used, {@link context} MUST be set.
 
 	 */
@@ -305,7 +305,7 @@ public class AjaxOptions
 	 * "script": Evaluates the response as bourne (NOT bash) script and returns it as plain text. 
 	 * "json": Evaluates the response as JSON and returns a JSONObject object. The JSON data is parsed in a strict manner; any malformed JSON is rejected and a parse error is thrown. (See json.org for more information on proper JSON formatting.)
 	 * "text": A plain text string.
-	 * "image" : returns a bitmap object
+	 * "image" : returns a Image object
 	 * @note if Script is used, {@link context} MUST be set.
 	 * @param dataType
 	 * @return this
@@ -923,6 +923,30 @@ public class AjaxOptions
 				{
 					try {
 						setter.invoke(this, getter.invoke(globalOptions));
+					} catch (Throwable t) {}
+				}
+				
+			}
+		}
+	}
+	
+	/**
+	 * Create a new AjaxOptions Object from the given source Object
+	 * @param source
+	 */
+	public AjaxOptions(AjaxOptions source)
+	{
+		this();
+		if (source != null)
+		{
+			for (Field f : fields)
+			{
+				Method setter = setters.get(f.getName());
+				Method getter = getters.get(f.getName());
+				if (setter != null && getter != null)
+				{
+					try {
+						setter.invoke(this, getter.invoke(source));
 					} catch (Throwable t) {}
 				}
 				
