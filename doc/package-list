@@ -1,2 +1,15 @@
+com.surelogic
+org.jdesktop.core.animation.i18n
+org.jdesktop.core.animation.rendering
+org.jdesktop.core.animation.timing
+org.jdesktop.core.animation.timing.evaluators
+org.jdesktop.core.animation.timing.interpolators
+org.jdesktop.core.animation.timing.sources
+org.jdesktop.core.animation.timing.triggers
+org.jdesktop.swing.animation.rendering
+org.jdesktop.swing.animation.timing.evaluators
+org.jdesktop.swing.animation.timing.sources
+org.jdesktop.swing.animation.timing.triggers
 org.json
 self.philbrown.javaQuery
+self.philbrown.javaQuery.animation

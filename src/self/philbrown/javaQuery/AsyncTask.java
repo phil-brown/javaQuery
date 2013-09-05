@@ -259,6 +259,7 @@ public abstract class AsyncTask<Params, Progress, Result>
 
 			@Override
 			public Result call() throws Exception {
+				Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
 				return doInBackground(params);
 			}
         	

@@ -19,6 +19,7 @@ package self.philbrown.javaQuery;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.GraphicsEnvironment;
 import java.awt.Image;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -40,6 +41,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
@@ -48,6 +50,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Timer;
@@ -63,12 +66,25 @@ import javax.swing.text.View;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.http.client.methods.HttpUriRequest;
+import org.jdesktop.core.animation.timing.Animator;
+import org.jdesktop.core.animation.timing.Interpolator;
+import org.jdesktop.core.animation.timing.PropertySetter;
+import org.jdesktop.core.animation.timing.TimingTarget;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.w3c.dom.Document;
 
 import self.philbrown.javaQuery.SwipeDetector.SwipeListener;
+import self.philbrown.javaQuery.animation.AccelerateDecelerateInterpolator;
+import self.philbrown.javaQuery.animation.AccelerateInterpolator;
+import self.philbrown.javaQuery.animation.AnimatorSet;
+import self.philbrown.javaQuery.animation.AnticipateInterpolator;
+import self.philbrown.javaQuery.animation.AnticipateOvershootInterpolator;
+import self.philbrown.javaQuery.animation.BounceInterpolator;
+import self.philbrown.javaQuery.animation.DecelerateInterpolator;
+import self.philbrown.javaQuery.animation.LinearInterpolator;
+import self.philbrown.javaQuery.animation.OvershootInterpolator;
 
 /**
  * Partial port of jQuery to Java
@@ -93,7 +109,30 @@ public class $
 		TEXT, 
 		/** Bourne Script response*/
 		SCRIPT
-	};
+	}
+	
+	/**
+	 * Relates to the interpolator used for <em>droidQuery</em> animations
+	 */
+	public static enum Easing
+	{
+		/** Rate of change starts out slowly and then accelerates. */
+		ACCELERATE,
+		/** Rate of change starts and ends slowly but accelerates through the middle. */
+		ACCELERATE_DECELERATE,
+		/** change starts backward then flings forward. */
+		ANTICIPATE,
+		/** change starts backward, flings forward and overshoots the target value, then finally goes back to the final value. */
+		ANTICIPATE_OVERSHOOT,
+		/** change bounces at the end. */
+		BOUNCE,
+		/** Rate of change starts out quickly and and then decelerates. */
+		DECELERATE,
+		/** Rate of change is constant. */
+		LINEAR,
+		/** change flings forward and overshoots the last value then comes back. */
+		OVERSHOOT
+	}
 	
 	/** Used to correctly call methods that use simple type parameters via reflection */
 	private static final Map<Class<?>, Class<?>> PRIMITIVE_TYPE_MAP = buildPrimitiveTypeMap();
@@ -398,7 +437,1059 @@ public class $
 		}
 	}
 	
-	//TODO: Effects & Animations
+	////Effects
+	
+	/**
+	 * Animates the selected views using the JSON properties, the given duration, the easing function,
+	 * and with the onComplete callback
+	 * @param properties JSON String of an {@link AnimationOptions} Object
+	 * @param duration the duration of the animation, in milliseconds
+	 * @param easing the Easing function to use
+	 * @param complete the Function to invoke once the animation has completed for all views
+	 * @return this
+	 * @see Easing
+	 * @see #animate(Map, long, Easing, Function)
+	 * @see #animate(String, AnimationOptions)
+	 * @see #animate(Map, AnimationOptions)
+	 */
+	public $ animate(String properties, long duration, Easing easing, Function complete)
+	{
+		return animate(properties, AnimationOptions.create().duration(duration).easing(easing).complete(complete));
+	}
+	
+	/**
+	 * Animate the current views. Example:
+	 * <pre>
+	 * $.with(mView).animate("{
+	 *                           left: 1000px,
+	 *                           top: 0%,
+	 *                           width: 50%,
+	 *                           alpha: 0.5
+	 *                        }", 
+	 *                        new AnimationOptions("{ duration: 3000,
+	 *                                                easing: linear
+	 *                                            }").complete(new Function() {
+	 *                        						public void invoke($ droidQuery, Object... args) {
+	 *                        							droidQuery.alert("Animation Complete!");
+	 *                        						}
+	 *                        					  });
+	 * </pre>
+	 * @param properties to animate, in CSS representation
+	 * @param options the {@link AnimationOptions} for the animation
+	 * @return this
+	 */
+	public $ animate(String properties, AnimationOptions options)
+	{
+		try
+		{
+			JSONObject props = new JSONObject(properties);
+			@SuppressWarnings("unchecked")
+			Iterator<String> iterator = props.keys();
+			Map<String, Object> map = new HashMap<String, Object>();
+			while (iterator.hasNext()) {
+		        String key = iterator.next();
+		        try {
+		            Object value = props.get(key);
+		            
+		            map.put(key, value);
+		            
+		        } catch (JSONException e) {
+		        	Log.w("droidQuery", "Cannot handle CSS String. Some values may not be animated.");
+		        }
+		    }
+			return animate(map, options);
+		} catch (JSONException e)
+		{
+			Log.w("droidQuery", "Cannot handle CSS String. Unable to animate.");
+			return this;
+		}
+	}
+	
+	/**
+	 * Animate the currently selected views
+	 * @param properties mapping of {@link AnimationOptions} attributes
+	 * @param duration the length of time for the animation to last
+	 * @param easing the Easing to use to interpolate the animation
+	 * @param complete the Function to call once the animation has completed or has been canceled.
+	 * @return this
+	 * @see QuickMap
+	 */
+	public $ animate(Map<String, Object> properties, long duration, Easing easing, final Function complete)
+	{
+		return animate(properties, AnimationOptions.create().duration(duration).easing(easing).complete(complete));
+	}
+	
+	/**
+	 * This reusable chunk of code can set up the given animation using the given animation options
+	 * @param options the options used to manipulate how the animation behaves
+	 * @return the container for placing views that will be animated using the given options
+	 */
+	private AnimatorSet animationWithOptions(final AnimationOptions options, List<Animator> animators)
+	{
+		AnimatorSet animation = new AnimatorSet();
+		animation.playTogether(animators);
+		animation.setDuration(options.duration());
+		animation.addTarget(new TimingTarget() {
+
+			@Override
+			public void begin(Animator source) {}
+
+			@Override
+			public void cancel(Animator animation) {
+				if (options.fail() != null)
+					options.fail().invoke($.this);
+				if (options.complete() != null)
+					options.complete().invoke($.this);
+			}
+			
+			@Override
+			public void end(Animator source) {
+				if (options.success() != null)
+					options.success().invoke($.this);
+				if (options.complete() != null)
+					options.complete().invoke($.this);
+			}
+
+			@Override
+			public void repeat(Animator source) {}
+
+			@Override
+			public void reverse(Animator source) {}
+
+			@Override
+			public void timingEvent(Animator source, double fraction) {}
+			
+		});
+		animation.addTarget(new TimingTarget(){
+
+			@Override
+			public void cancel(Animator animation) {
+				if (options.fail() != null)
+					options.fail().invoke($.this);
+				if (options.complete() != null)
+					options.complete().invoke($.this);
+			}
+
+			@Override
+			public void end(Animator animation) {
+				if (options.success() != null)
+					options.success().invoke($.this);
+				if (options.complete() != null)
+					options.complete().invoke($.this);
+			}
+
+			@Override
+			public void repeat(Animator animation) {}
+
+			@Override
+			public void begin(Animator animation) {}
+
+			@Override
+			public void reverse(Animator source) {}
+
+			@Override
+			public void timingEvent(Animator source, double fraction) {}
+			
+		});
+		Interpolator interpolator = null;
+		if (options.easing() == null)
+			options.easing(Easing.LINEAR);
+		final Easing easing = options.easing();
+		switch(easing)
+		{
+		case ACCELERATE : {
+			interpolator = new AccelerateInterpolator();
+			break;
+		}
+		case ACCELERATE_DECELERATE : {
+			interpolator = new AccelerateDecelerateInterpolator();
+			break;
+		}
+		case ANTICIPATE : {
+			interpolator = new AnticipateInterpolator();
+			break;
+		}
+		case ANTICIPATE_OVERSHOOT : {
+			interpolator = new AnticipateOvershootInterpolator();
+			break;
+		}
+		case BOUNCE : {
+			interpolator = new BounceInterpolator();
+			break;
+		}
+		case DECELERATE : {
+			interpolator = new DecelerateInterpolator();
+			break;
+		}
+		case OVERSHOOT : {
+			interpolator = new OvershootInterpolator();
+			break;
+		}
+		//linear is default.
+		case LINEAR :
+		default :
+			interpolator = new LinearInterpolator();
+			break;
+		}
+		
+		//allow custom interpolator
+		if (options.specialEasing() != null)
+			interpolator = options.specialEasing();
+		
+		animation.setInterpolator(interpolator);
+		
+		return animation;
+	}
+	
+	/**
+	 * Interprets the CSS-style String and sets the value
+	 * @param view the view that will change.
+	 * @param key the name of the attribute
+	 * @param _value the end animation value
+	 * @return the computed value
+	 */
+	private Object getAnimationValue(Component view, String key, String _value)
+	{
+		Object value = null;
+		
+		String[] split = (_value).split("(?<=\\D)(?=\\d)|(?<=\\d)(?=\\D)");
+		if (split.length == 1)
+		{
+			if (split[0].contains("."))
+			{
+				value = Float.valueOf(split[0]);
+			}
+			else
+			{
+				value = Integer.valueOf(split[0]);
+			}
+		}
+		else
+		{
+			if (split.length > 2)
+			{
+				Log.w("droidQuery", "parsererror for key " + key);
+				return null;
+			}
+			if (split[1].equalsIgnoreCase("px"))
+			{
+				//this is the default. Just determine if float or int
+				if (split[0].contains("."))
+				{
+					value = Float.valueOf(split[0]);
+				}
+				else
+				{
+					value = Integer.valueOf(split[0]);
+				}
+			}
+			else if (split[1].equalsIgnoreCase("dip") || split[1].equalsIgnoreCase("dp") || split[1].equalsIgnoreCase("sp"))
+			{
+				Log.w("$", "Dimension not supported");
+				if (split[0].contains("."))
+				{
+					value = Float.valueOf(split[0]);
+				}
+				else
+				{
+					value = Integer.valueOf(split[0]);
+				}
+			}
+			else if (split[1].equalsIgnoreCase("in"))
+			{
+				float pt = view(0).getGraphics().getFontMetrics().getFont().deriveFont(1).getSize2D()/72;
+				if (split[0].contains("."))
+				{
+					value = Float.parseFloat(split[0])*pt;
+				}
+				else
+				{
+					value = Integer.parseInt(split[0])*pt;
+				}
+			}
+			else if (split[1].equalsIgnoreCase("mm"))
+			{
+				float pt = view(0).getGraphics().getFontMetrics().getFont().deriveFont(1).getSize2D()/72;
+				if (split[0].contains("."))
+				{
+					value = Float.parseFloat(split[0])*pt/25.4;
+				}
+				else
+				{
+					value = Integer.parseInt(split[0])*pt/25.4;
+				}
+			}
+			else if (split[1].equalsIgnoreCase("pt"))
+			{
+				if (split[0].contains("."))
+				{
+					value = view(0).getGraphics().getFontMetrics().getFont().deriveFont(Float.parseFloat(split[0])).getSize2D();
+				}
+				else
+				{
+					value = view(0).getGraphics().getFontMetrics().getFont().deriveFont(Integer.parseInt(split[0])).getSize2D();
+				}
+			}
+			else if (split[1].equals("%"))
+			{
+				Rectangle windowBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+				Component parent = view.getParent();
+				float pixels = 0;
+				if (parent == null)
+				{
+					pixels = windowBounds.width;
+					//use best guess for width or height dpi
+					if (split[0].equalsIgnoreCase("y") || split[0].equalsIgnoreCase("top") || split[0].equalsIgnoreCase("bottom"))
+					{
+						pixels = windowBounds.height;
+					}
+				}
+				else
+				{
+					pixels = parent.getWidth();
+					if (split[0].equalsIgnoreCase("y") || split[0].equalsIgnoreCase("top") || split[0].equalsIgnoreCase("bottom"))
+					{
+						pixels = parent.getHeight();
+					}
+				}
+				float percent = 0;
+				if (pixels != 0)
+					percent = Float.valueOf(split[0])/100*pixels;
+				if (split[0].contains("."))
+				{
+					value = percent;
+				}
+				else
+				{
+					value = (int) percent;
+				}
+			}
+			else
+			{
+				Log.w("droidQuery", "invalid units for Object with key " + key);
+				return null;
+			}
+		}
+		return value;
+	}
+	
+	/**
+	 * Animate multiple view properties at the same time. Example:
+	 * <pre>
+	 * $.with(myView).animate(new QuickMap(QuickEntry.qe("alpha", .8f), QuickEntry.qe("width", 50%)), 400, Easing.LINEAR, null);
+	 * </pre>
+	 * @param properties mapping of property names and final values to animate
+	 * @param options the options for setting the duration, easing, etc of the animation
+	 * @return this
+	 */
+	public $ animate(Map<String, Object> properties, final AnimationOptions options)
+	{
+		List<Animator> animations = new ArrayList<Animator>();
+		for (Entry<String, Object> entry : properties.entrySet())
+		{
+			final String key = entry.getKey();
+			//Java sometimes will interpret these Strings as Numbers, so some trickery is needed below
+			Object value = entry.getValue();
+			
+			for (final Component view : this.views)
+			{
+				Animator anim = null;
+				if (value instanceof String)
+					value = getAnimationValue(view, key, (String) value);
+				if (value != null)
+				{
+					final Rectangle params = view.getBounds();
+					try {
+						final Field field = params.getClass().getField(key);
+						if (field != null)
+						{
+							anim = new Animator();
+							anim.addTarget(PropertySetter.getTarget(params, key, field.get(params), value));
+							
+							anim.addTarget(new TimingTarget(){
+
+								@Override
+								public void begin(Animator source) {}
+
+								@Override
+								public void end(Animator source) {}
+
+								@Override
+								public void cancel(Animator source) {}
+
+								@Override
+								public void repeat(Animator source) {}
+
+								@Override
+								public void reverse(Animator source) {}
+
+								@Override
+								public void timingEvent(Animator source, double fraction) {
+									//TODO: ensure this is needed. Test to be sure it is not overkill
+									Rectangle bounds = view.getBounds();
+									try {
+										field.set(bounds, fraction);
+									} catch (Throwable t) {
+										if (options.debug())
+											t.printStackTrace();
+									}
+									view.setBounds(bounds);
+
+									if (options.progress() != null)
+									{
+										options.progress().invoke($.with(view), key, fraction, source.getDuration() - source.getTotalElapsedTime());
+									}
+								}
+								
+							});
+						}
+						
+					} catch (Throwable t) {
+						
+						if (options.debug())
+							Log.w("$", String.format(Locale.US, "%s is not a LayoutParams attribute.", key));
+					}
+					
+					if (anim == null)
+					{
+						anim = new Animator();
+						anim.addTarget(PropertySetter.getTarget(view, key, value));
+						
+						if (options.progress() != null)
+						{
+							anim.addTarget(new TimingTarget(){
+
+								@Override
+								public void begin(Animator source) {}
+
+								@Override
+								public void end(Animator source) {}
+
+								@Override
+								public void cancel(Animator source) {}
+
+								@Override
+								public void repeat(Animator source) {}
+
+								@Override
+								public void reverse(Animator source) {}
+
+								@Override
+								public void timingEvent(Animator source, double fraction) {
+									if (options.progress() != null)
+									{
+										options.progress().invoke($.with(view), key, fraction, source.getDuration() - source.getTotalElapsedTime());
+									}
+								}
+								
+							});
+						}
+					}
+					
+
+					anim.setRepeatCount(options.repeatCount());
+					if (options.reverse())
+						anim.setRepeatBehavior(Animator.RepeatBehavior.REVERSE);
+					animations.add(anim);
+				}
+				
+			}
+		}
+		AnimatorSet animation = animationWithOptions(options, animations);
+		animation.start();
+		
+		return this;
+	}
+	
+////FIXME: The below shortcut methods need to be tweaked to work with pure Java Components - not Android Views.
+////This changes what methods can be called via reflection - setY and setAlpha are not component methods!
+	
+
+//	/**
+//	 * Shortcut method for animating the alpha attribute of this {@link #view} to 1.0.
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	@SuppressWarnings({ "unchecked", "rawtypes" })
+//	public void fadeIn(AnimationOptions options)
+//	{
+//		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(1.0f))), options);
+//	}
+	
+//	/**
+//	 * Shortcut method for animating the alpha attribute of the selected views to 1.0.
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	public void fadeIn(long duration, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction) {}
+//		});
+//		anim.setDuration(duration);
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			Animator animator = new Animator();
+//			animator.addTarget(PropertySetter.getTarget(view, "alpha", 1.0f));
+//			if (builder == null) 
+//			{
+//				builder = anim.play(animator);
+//			}
+//			else
+//			{
+//				builder.with(animator);
+//			}
+//		}
+//		anim.start();
+//	}
+	
+//	/**
+//	 * Shortcut method for animating the alpha attribute of the selected views to 0.0.
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	@SuppressWarnings({ "unchecked", "rawtypes" })
+//	public void fadeOut(AnimationOptions options)
+//	{
+//		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(0.0f))), options);
+//	}
+	
+//	/**
+//	 * Shortcut method for animating the alpha attribute of this {@link #view} to 0.0.
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	public void fadeOut(long duration, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction) {}
+//		});
+//		anim.setDuration(duration);
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			Animator animator = new Animator();
+//			animator.addTarget(PropertySetter.getTarget(view, "alpha", 0.0f));
+//			if (builder == null) 
+//			{
+//				builder = anim.play(animator);
+//			}
+//			else
+//			{
+//				builder.with(animator);
+//			}
+//		}
+//		anim.start();
+//	}
+	
+//	/**
+//	 * Shortcut method for animating the alpha attribute of the selected views to the given value.
+//	 * @param opacity the alpha value at the end of the animation
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	@SuppressWarnings({ "unchecked", "rawtypes" })
+//	public void fadeTo(float opacity, AnimationOptions options)
+//	{
+//		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(opacity))), options);
+//	}
+	
+//	/**
+//	 * Shortcut method for animating the alpha attribute of this {@link #view} to the given value.
+//	 * @param duration the length of time the animation should last
+//	 * @param opacity the alpha value at the end of the animation
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	public void fadeTo(long duration, float opacity, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction) {}
+//		});
+//		anim.setDuration(duration);
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			Animator animator = new Animator();
+//			animator.addTarget(PropertySetter.getTarget(view, "alpha", opacity));
+//			if (builder == null) 
+//			{
+//				builder = anim.play(animator);
+//			}
+//			else
+//			{
+//				builder.with(animator);
+//			}
+//		}
+//		anim.start();
+//	}
+	
+//	/**
+//	 * For each selected view, if its alpha is less than 0.5, it will fade in. Otherwise, it will
+//	 * fade out.
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	public void fadeToggle(long duration, final Function complete)
+//	{
+//		List<Component> zeros = new ArrayList<Component>();
+//		List<Component> ones = new ArrayList<Component>();
+//		for (Component view : this.views)
+//		{
+//			if (view.getGraphics().getColor().getAlpha() < 0.5 || view.getGraphics().getColor().getTransparency() < 0.5)
+//				zeros.add(view);
+//			else
+//				ones.add(view);
+//		}
+//		$.with(zeros).fadeIn(duration, complete);
+//		$.with(ones).fadeOut(duration, complete);
+//	}
+	
+//	/**
+//	 * If this {@link #view} has an alpha of less than 0.5, it will fade in. Otherwise, it will
+//	 * fade out.
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	//FIXME: view.setAlpha() is not a method
+//	public void fadeToggle(AnimationOptions options)
+//	{
+//		List<Component> zeros = new ArrayList<Component>();
+//		List<Component> ones = new ArrayList<Component>();
+//		for (Component view : this.views)
+//		{
+//			if (view.getGraphics().getColor().getAlpha() < 0.5 || view.getGraphics().getColor().getTransparency() < 0.5)
+//				zeros.add(view);
+//			else
+//				ones.add(view);
+//		}
+//		$.with(zeros).fadeIn(options);
+//		$.with(ones).fadeOut(options);
+//	}
+	
+//	/**
+//	 * Animates the selected views out of their parent views by sliding it down, past its bottom
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	public void slideDown(long duration, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction){}
+//		});
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			Component parent = view.getParent();
+//			float y = 0;
+//			if (parent != null)
+//			{
+//				y = parent.getHeight();
+//			}
+//			else
+//			{
+//				Rectangle display = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+//				y = display.height;
+//			}
+//			Animator animator = new Animator();
+//			//FIXME: this fails because property does not exist!
+//			animator.addTarget(PropertySetter.getTarget(view, "y", y));
+//			if (builder == null)
+//				builder = anim.play(animator);
+//			else
+//				builder.with(animator);
+//		}
+//		anim.setDuration(duration);
+//		anim.start();
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it down, past its bottom
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	public void slideDown(final AnimationOptions options)
+//	{
+//		List<Animator> animations = new ArrayList<Animator>();
+//		for (final Component view : this.views)
+//		{
+//			Component parent = view.getParent();
+//			float y = 0;
+//			if (parent != null)
+//			{
+//				y = parent.getHeight();
+//			}
+//			else
+//			{
+//				Rectangle display = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+//				
+//				y = display.height;
+//			}
+//			Animator animator = new Animator();
+//			animator.addTarget(PropertySetter.getTarget(view, "y", y));
+//			if (options.progress() != null)
+//			{
+//				animator.addTarget(new TimingTarget() {
+//					@Override
+//					public void cancel(Animator animation) {}
+//
+//					@Override
+//					public void end(Animator animation) {}
+//
+//					@Override
+//					public void repeat(Animator animation) {}
+//
+//					@Override
+//					public void begin(Animator animation) {}
+//
+//					@Override
+//					public void reverse(Animator source) {}
+//
+//					@Override
+//					public void timingEvent(Animator source, double fraction) {
+//						options.progress().invoke($.with(view), "y", fraction, source.getDuration() - source.getTotalElapsedTime());
+//					}
+//				});
+//			}
+//			animations.add(animator);
+//		}
+//		
+//		AnimatorSet animation = animationWithOptions(options, animations);
+//		animation.start();
+//		
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it up, past its top
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	public void slideUp(long duration, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction) {}
+//		});
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			
+//			ObjectAnimator animator = ObjectAnimator.ofFloat(view, "y", 0);
+//			if (builder == null)
+//				builder = anim.play(animator);
+//			else
+//				builder.with(animator);
+//		}
+//		anim.setDuration(duration);
+//		anim.start();
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it up, past its top
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	public void slideUp(final AnimationOptions options)
+//	{		
+//		List<Animator> animations = new ArrayList<Animator>();
+//		for (final Component view : this.views)
+//		{
+//			Animator anim = new Animator();
+//			anim.addTarget(PropertySetter.getTarget(view, "y", 0f));
+//			if (options.progress() != null)
+//			{
+//				anim.addTarget(new TimingTarget() {
+//					@Override
+//					public void cancel(Animator animation) {}
+//
+//					@Override
+//					public void end(Animator animation) {}
+//
+//					@Override
+//					public void repeat(Animator animation) {}
+//
+//					@Override
+//					public void begin(Animator animation) {}
+//
+//					@Override
+//					public void reverse(Animator source) {}
+//
+//					@Override
+//					public void timingEvent(Animator source, double fraction) {
+//						options.progress().invoke($.with(view), "y", fraction, source.getDuration() - source.getTotalElapsedTime());
+//					}
+//				});
+//			}
+//			animations.add(anim);
+//		}
+//		
+//		AnimatorSet animation = animationWithOptions(options, animations);
+//		animation.start();
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it right, past its edge
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	public void slideRight(long duration, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction) {}
+//		});
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			Component parent = view.getParent();
+//			float x = 0;
+//			if (parent != null && parent instanceof View)
+//			{
+//				x = ((View) parent).getWidth();
+//			}
+//			else
+//			{
+//				Display display = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();  
+//				x = display.getHeight();
+//			}
+//			ObjectAnimator animator = ObjectAnimator.ofFloat(view, "x", x);
+//			if (builder == null)
+//				builder = anim.play(animator);
+//			else
+//				builder.with(animator);
+//		}
+//		anim.setDuration(duration);
+//		anim.start();
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it right, past its edge
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	public void slideRight(final AnimationOptions options)
+//	{		
+//		List<Animator> animations = new ArrayList<Animator>();
+//		for (final Component view : this.views)
+//		{
+//			Component parent = view.getParent();
+//			float x = 0;
+//			if (parent != null)
+//			{
+//				x = parent.getWidth();
+//			}
+//			else
+//			{
+//				Display display = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();  
+//				x = display.getHeight();
+//			}
+//			ObjectAnimator anim = ObjectAnimator.ofFloat(view, "x", x);
+//			if (options.progress() != null)
+//			{
+//				anim.addUpdateListener(new AnimatorUpdateListener(){
+//
+//					@Override
+//					public void onAnimationUpdate(ValueAnimator animation) {
+//						options.progress().invoke($.with(view), "x", animation.getAnimatedValue(), animation.getDuration() - animation.getCurrentPlayTime());
+//					}
+//					
+//				});
+//			}
+//			animations.add(anim);
+//		}
+//		
+//		AnimatorSet animation = animationWithOptions(options, animations);
+//		animation.start();
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it left, past its edge
+//	 * @param duration the length of time the animation should last
+//	 * @param complete the function to call when the animation has completed
+//	 */
+//	public void slideLeft(long duration, final Function complete)
+//	{
+//		AnimatorSet anim = new AnimatorSet();
+//		anim.addTarget(new TimingTarget() {
+//			@Override
+//			public void cancel(Animator animation) {}
+//
+//			@Override
+//			public void end(Animator animation) {
+//				if (complete != null)
+//					complete.invoke($.this);
+//			}
+//
+//			@Override
+//			public void repeat(Animator animation) {}
+//
+//			@Override
+//			public void begin(Animator animation) {}
+//
+//			@Override
+//			public void reverse(Animator source) {}
+//
+//			@Override
+//			public void timingEvent(Animator source, double fraction) {}
+//		});
+//		AnimatorSet.Builder builder = null;
+//		for (Component view : this.views)
+//		{
+//			ObjectAnimator animator = ObjectAnimator.ofFloat(view, "x", 0);
+//			if (builder == null)
+//				builder = anim.play(animator);
+//			else
+//				builder.with(animator);
+//		}
+//		anim.setDuration(duration);
+//		anim.start();
+//	}
+//	
+//	/**
+//	 * Animates the selected views out of its parent by sliding it left, past its edge
+//	 * @param options use to modify the behavior of the animation
+//	 */
+//	public void slideLeft(final AnimationOptions options)
+//	{
+//		List<Animator> animations = new ArrayList<Animator>();
+//		for (final Component view : this.views)
+//		{
+//			ObjectAnimator anim = ObjectAnimator.ofFloat(view, "x", 0);
+//			if (options.progress() != null)
+//			{
+//				anim.addUpdateListener(new AnimatorUpdateListener(){
+//
+//					@Override
+//					public void onAnimationUpdate(ValueAnimator animation) {
+//						options.progress().invoke($.with(view), "x", animation.getAnimatedValue(), animation.getDuration() - animation.getCurrentPlayTime());
+//					}
+//					
+//				});
+//			}
+//			animations.add(anim);
+//		}
+//		
+//		AnimatorSet animation = animationWithOptions(options, animations);
+//		animation.start();
+//	}
 	
 	/**
 	 * Gets the value for the given attribute of the first view in the current selection. 
@@ -2807,7 +3898,7 @@ public class $
 	 * @return the given string with its first letter capitalized
 	 * @throws NullPointerException if the string is null or empty
 	 */
-	private String capitalize(String string)
+	public static String capitalize(String string)
 	{
 		if (string == null || string.trim().length() == 0)
 			throw new NullPointerException("Cannot handle null or empty string");
