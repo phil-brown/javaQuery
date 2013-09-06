@@ -1,7 +1,7 @@
 <project name="javaQuery" >
     
     <target name="setup" description="setup values, such as version number" >
-        <property name="version" value="0.1.4" />
+        <property name="version" value="0.1.5" />
         <property name="release_dir" value="build/release/${version}/" />
         <mkdir dir="${release_dir}" />
     </target>
@@ -23,6 +23,7 @@
 	    
 	    <copy file="LICENSE.txt" todir="${release_dir}"/>
 	    <copy file="README.md" todir="${release_dir}"/>
+	    <!-- TODO: Add changelog -->
 	    <zip basedir="${release_dir}" includes="**" destfile="${release_dir}/${ant.project.name}-${version}.zip"/>
 	</target>
 </project>

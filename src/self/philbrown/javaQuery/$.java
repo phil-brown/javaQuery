@@ -24,6 +24,12 @@ import java.awt.Image;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Window;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ComponentEvent;
+import java.awt.event.ComponentListener;
+import java.awt.event.ContainerEvent;
+import java.awt.event.ContainerListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.HierarchyBoundsListener;
@@ -59,6 +65,7 @@ import java.util.TimerTask;
 import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
 import javax.swing.ImageIcon;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.text.JTextComponent;
@@ -70,6 +77,7 @@ import org.jdesktop.core.animation.timing.Animator;
 import org.jdesktop.core.animation.timing.Interpolator;
 import org.jdesktop.core.animation.timing.PropertySetter;
 import org.jdesktop.core.animation.timing.TimingTarget;
+import org.jdesktop.core.animation.timing.TimingTargetAdapter;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -112,7 +120,7 @@ public class $
 	}
 	
 	/**
-	 * Relates to the interpolator used for <em>droidQuery</em> animations
+	 * Relates to the interpolator used for <em>javaQuery</em> animations
 	 */
 	public static enum Easing
 	{
@@ -249,9 +257,9 @@ public class $
 	 * @param name
 	 * @return the found component, or {@code null} if it was not found.
 	 */
-	public static Component findComponentWithName(String name, Component root)
+	public static Component findComponentWithName(String name, Component root)//FIXME: debug to ensure this is working!
 	{
-		if (root.getName().equals(name))
+		if (root.getName() != null && root.equals(name))
 			return root;
 		else if (root instanceof Container)
 		{
@@ -469,8 +477,8 @@ public class $
 	 *                        new AnimationOptions("{ duration: 3000,
 	 *                                                easing: linear
 	 *                                            }").complete(new Function() {
-	 *                        						public void invoke($ droidQuery, Object... args) {
-	 *                        							droidQuery.alert("Animation Complete!");
+	 *                        						public void invoke($ javaQuery, Object... args) {
+	 *                        							javaQuery.alert("Animation Complete!");
 	 *                        						}
 	 *                        					  });
 	 * </pre>
@@ -494,13 +502,13 @@ public class $
 		            map.put(key, value);
 		            
 		        } catch (JSONException e) {
-		        	Log.w("droidQuery", "Cannot handle CSS String. Some values may not be animated.");
+		        	Log.w("javaQuery", "Cannot handle CSS String. Some values may not be animated.");
 		        }
 		    }
 			return animate(map, options);
 		} catch (JSONException e)
 		{
-			Log.w("droidQuery", "Cannot handle CSS String. Unable to animate.");
+			Log.w("javaQuery", "Cannot handle CSS String. Unable to animate.");
 			return this;
 		}
 	}
@@ -668,7 +676,7 @@ public class $
 		{
 			if (split.length > 2)
 			{
-				Log.w("droidQuery", "parsererror for key " + key);
+				Log.w("javaQuery", "parsererror for key " + key);
 				return null;
 			}
 			if (split[1].equalsIgnoreCase("px"))
@@ -766,7 +774,7 @@ public class $
 			}
 			else
 			{
-				Log.w("droidQuery", "invalid units for Object with key " + key);
+				Log.w("javaQuery", "invalid units for Object with key " + key);
 				return null;
 			}
 		}
@@ -798,95 +806,115 @@ public class $
 					value = getAnimationValue(view, key, (String) value);
 				if (value != null)
 				{
-					final Rectangle params = view.getBounds();
-					try {
-						final Field field = params.getClass().getField(key);
-						if (field != null)
+					//special color cases
+					if (key.equals("alpha") || key.equals("red") || key.equals("green") || key.equals("blue"))
+					{
+						if (key.equals("alpha")  && view instanceof JComponent)
 						{
+							((JComponent) view).setOpaque(false);
+						}
+						try
+						{
+							final Method getComponent = Color.class.getMethod(Log.buildString("get", capitalize(key)));
+							final int colorComponent = (Integer) getComponent.invoke(view.getBackground());
+							final ColorHelper color = new ColorHelper(view.getBackground());
+							final Method setComponent = ColorHelper.class.getMethod(Log.buildString("set", capitalize(key)), new Class<?>[]{int.class});
 							anim = new Animator();
-							anim.addTarget(PropertySetter.getTarget(params, key, field.get(params), value));
 							
-							anim.addTarget(new TimingTarget(){
-
-								@Override
-								public void begin(Animator source) {}
-
-								@Override
-								public void end(Animator source) {}
-
-								@Override
-								public void cancel(Animator source) {}
-
-								@Override
-								public void repeat(Animator source) {}
-
-								@Override
-								public void reverse(Animator source) {}
+							//if integer - assume 0-255
+							if (value instanceof Integer || is(value, int.class))
+							{
+								anim.addTarget(PropertySetter.getTarget(color, key, colorComponent, Integer.parseInt(value.toString())));
+							}
+							//if float - assume 0.0-1.0
+							else if (value instanceof Float || is(value, float.class))
+							{
+								anim.addTarget(PropertySetter.getTarget(color, key, colorComponent, (int) (255*Float.parseFloat(value.toString()))));
+							}
+							anim.addTarget(new TimingTargetAdapter(){
 
 								@Override
 								public void timingEvent(Animator source, double fraction) {
-									//TODO: ensure this is needed. Test to be sure it is not overkill
-									Rectangle bounds = view.getBounds();
+									double d = source.getInterpolator().interpolate(fraction);
 									try {
-										field.set(bounds, fraction);
+										setComponent.invoke(color, (int) d);
+										view.setBackground(color.getColor());
 									} catch (Throwable t) {
 										if (options.debug())
 											t.printStackTrace();
 									}
-									view.setBounds(bounds);
-
-									if (options.progress() != null)
-									{
-										options.progress().invoke($.with(view), key, fraction, source.getDuration() - source.getTotalElapsedTime());
-									}
 								}
-								
 							});
 						}
-						
-					} catch (Throwable t) {
-						
-						if (options.debug())
-							Log.w("$", String.format(Locale.US, "%s is not a LayoutParams attribute.", key));
-					}
-					
-					if (anim == null)
-					{
-						anim = new Animator();
-						anim.addTarget(PropertySetter.getTarget(view, key, value));
-						
-						if (options.progress() != null)
+						catch (Throwable t)
 						{
-							anim.addTarget(new TimingTarget(){
-
-								@Override
-								public void begin(Animator source) {}
-
-								@Override
-								public void end(Animator source) {}
-
-								@Override
-								public void cancel(Animator source) {}
-
-								@Override
-								public void repeat(Animator source) {}
-
-								@Override
-								public void reverse(Animator source) {}
-
-								@Override
-								public void timingEvent(Animator source, double fraction) {
-									if (options.progress() != null)
-									{
-										options.progress().invoke($.with(view), key, fraction, source.getDuration() - source.getTotalElapsedTime());
-									}
-								}
+							if (options.debug())
+								t.printStackTrace();
+						}
+						
+					}
+					else
+					{
+						final Rectangle params = view.getBounds();
+						try {
+							final Field field = params.getClass().getField(key);
+							if (field != null)
+							{
+								anim = new Animator();
+								anim.addTarget(PropertySetter.getTarget(params, key, field.get(params), value));
 								
-							});
+								anim.addTarget(new TimingTargetAdapter(){
+
+									@Override
+									public void timingEvent(Animator source, double fraction) {
+										Rectangle bounds = view.getBounds();
+										double d = source.getInterpolator().interpolate(fraction);
+										try {
+											field.set(bounds, d);
+										} catch (Throwable t) {
+											if (options.debug())
+												t.printStackTrace();
+										}
+										view.setBounds(bounds);
+
+										if (options.progress() != null)
+										{
+											options.progress().invoke($.with(view), key, d, source.getDuration() - source.getTotalElapsedTime());
+										}
+									}
+									
+								});
+							}
+							
+						} catch (Throwable t) {
+							
+							if (options.debug())
+								Log.w("$", String.format(Locale.US, "%s is not a LayoutParams attribute.", key));
+						}
+						
+						if (anim == null)
+						{
+							anim = new Animator();
+							anim.addTarget(PropertySetter.getTarget(view, key, value));
+							
+							if (options.progress() != null)
+							{
+								anim.addTarget(new TimingTargetAdapter(){
+
+									@Override
+									public void timingEvent(Animator source, double fraction) {
+										double d = source.getInterpolator().interpolate(fraction);
+										if (options.progress() != null)
+										{
+											options.progress().invoke($.with(view), key, d, source.getDuration() - source.getTotalElapsedTime());
+										}
+									}
+									
+								});
+							}
 						}
 					}
 					
-
 					anim.setRepeatCount(options.repeatCount());
 					if (options.reverse())
 						anim.setRepeatBehavior(Animator.RepeatBehavior.REVERSE);
@@ -900,596 +928,219 @@ public class $
 		
 		return this;
 	}
-	
-////FIXME: The below shortcut methods need to be tweaked to work with pure Java Components - not Android Views.
-////This changes what methods can be called via reflection - setY and setAlpha are not component methods!
-	
 
-//	/**
-//	 * Shortcut method for animating the alpha attribute of this {@link #view} to 1.0.
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	@SuppressWarnings({ "unchecked", "rawtypes" })
-//	public void fadeIn(AnimationOptions options)
-//	{
-//		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(1.0f))), options);
-//	}
+	/**
+	 * Shortcut method for animating the alpha attribute of this {@link #view} to 1.0.
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public void fadeIn(AnimationOptions options)
+	{
+		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(1.0f))), options);
+	}
 	
-//	/**
-//	 * Shortcut method for animating the alpha attribute of the selected views to 1.0.
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	public void fadeIn(long duration, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction) {}
-//		});
-//		anim.setDuration(duration);
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			Animator animator = new Animator();
-//			animator.addTarget(PropertySetter.getTarget(view, "alpha", 1.0f));
-//			if (builder == null) 
-//			{
-//				builder = anim.play(animator);
-//			}
-//			else
-//			{
-//				builder.with(animator);
-//			}
-//		}
-//		anim.start();
-//	}
+	/**
+	 * Shortcut method for animating the alpha attribute of the selected views to 1.0.
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void fadeIn(long duration, final Function complete)
+	{
+		fadeIn(new AnimationOptions().duration(duration).complete(complete));
+	}
 	
-//	/**
-//	 * Shortcut method for animating the alpha attribute of the selected views to 0.0.
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	@SuppressWarnings({ "unchecked", "rawtypes" })
-//	public void fadeOut(AnimationOptions options)
-//	{
-//		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(0.0f))), options);
-//	}
+	/**
+	 * Shortcut method for animating the alpha attribute of the selected views to 0.0.
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public void fadeOut(AnimationOptions options)
+	{
+		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(0.0f))), options);
+	}
 	
-//	/**
-//	 * Shortcut method for animating the alpha attribute of this {@link #view} to 0.0.
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	public void fadeOut(long duration, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction) {}
-//		});
-//		anim.setDuration(duration);
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			Animator animator = new Animator();
-//			animator.addTarget(PropertySetter.getTarget(view, "alpha", 0.0f));
-//			if (builder == null) 
-//			{
-//				builder = anim.play(animator);
-//			}
-//			else
-//			{
-//				builder.with(animator);
-//			}
-//		}
-//		anim.start();
-//	}
+	/**
+	 * Shortcut method for animating the alpha attribute of this {@link #view} to 0.0.
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void fadeOut(long duration, final Function complete)
+	{
+		fadeOut(new AnimationOptions().duration(duration).complete(complete));
+	}
 	
-//	/**
-//	 * Shortcut method for animating the alpha attribute of the selected views to the given value.
-//	 * @param opacity the alpha value at the end of the animation
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	@SuppressWarnings({ "unchecked", "rawtypes" })
-//	public void fadeTo(float opacity, AnimationOptions options)
-//	{
-//		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(opacity))), options);
-//	}
+	/**
+	 * Shortcut method for animating the alpha attribute of the selected views to the given value.
+	 * @param opacity the alpha value at the end of the animation
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public void fadeTo(float opacity, AnimationOptions options)
+	{
+		this.animate(new QuickMap(QuickEntry.qe("alpha", new Float(opacity))), options);
+	}
 	
-//	/**
-//	 * Shortcut method for animating the alpha attribute of this {@link #view} to the given value.
-//	 * @param duration the length of time the animation should last
-//	 * @param opacity the alpha value at the end of the animation
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	public void fadeTo(long duration, float opacity, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction) {}
-//		});
-//		anim.setDuration(duration);
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			Animator animator = new Animator();
-//			animator.addTarget(PropertySetter.getTarget(view, "alpha", opacity));
-//			if (builder == null) 
-//			{
-//				builder = anim.play(animator);
-//			}
-//			else
-//			{
-//				builder.with(animator);
-//			}
-//		}
-//		anim.start();
-//	}
+	/**
+	 * Shortcut method for animating the alpha attribute of this {@link #view} to the given value.
+	 * @param duration the length of time the animation should last
+	 * @param opacity the alpha value at the end of the animation
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void fadeTo(long duration, float opacity, final Function complete)
+	{
+		fadeTo(opacity, new AnimationOptions().duration(duration).complete(complete));
+	}
 	
-//	/**
-//	 * For each selected view, if its alpha is less than 0.5, it will fade in. Otherwise, it will
-//	 * fade out.
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	public void fadeToggle(long duration, final Function complete)
-//	{
-//		List<Component> zeros = new ArrayList<Component>();
-//		List<Component> ones = new ArrayList<Component>();
-//		for (Component view : this.views)
-//		{
-//			if (view.getGraphics().getColor().getAlpha() < 0.5 || view.getGraphics().getColor().getTransparency() < 0.5)
-//				zeros.add(view);
-//			else
-//				ones.add(view);
-//		}
-//		$.with(zeros).fadeIn(duration, complete);
-//		$.with(ones).fadeOut(duration, complete);
-//	}
+	/**
+	 * For each selected view, if its alpha is less than 0.5, it will fade in. Otherwise, it will
+	 * fade out.
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void fadeToggle(long duration, final Function complete)
+	{
+		List<Component> zeros = new ArrayList<Component>();
+		List<Component> ones = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			if (view.getGraphics().getColor().getAlpha() < 0.5)
+				zeros.add(view);
+			else
+				ones.add(view);
+		}
+		$.with(zeros).fadeIn(duration, complete);
+		$.with(ones).fadeOut(duration, complete);
+	}
 	
-//	/**
-//	 * If this {@link #view} has an alpha of less than 0.5, it will fade in. Otherwise, it will
-//	 * fade out.
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	//FIXME: view.setAlpha() is not a method
-//	public void fadeToggle(AnimationOptions options)
-//	{
-//		List<Component> zeros = new ArrayList<Component>();
-//		List<Component> ones = new ArrayList<Component>();
-//		for (Component view : this.views)
-//		{
-//			if (view.getGraphics().getColor().getAlpha() < 0.5 || view.getGraphics().getColor().getTransparency() < 0.5)
-//				zeros.add(view);
-//			else
-//				ones.add(view);
-//		}
-//		$.with(zeros).fadeIn(options);
-//		$.with(ones).fadeOut(options);
-//	}
+	/**
+	 * If this {@link #view} has an alpha of less than 0.5, it will fade in. Otherwise, it will
+	 * fade out.
+	 * @param options use to modify the behavior of the animation
+	 */
+	public void fadeToggle(AnimationOptions options)
+	{
+		List<Component> zeros = new ArrayList<Component>();
+		List<Component> ones = new ArrayList<Component>();
+		for (Component view : this.views)
+		{
+			if (view.getGraphics().getColor().getAlpha() < 0.5)
+				zeros.add(view);
+			else
+				ones.add(view);
+		}
+		$.with(zeros).fadeIn(options);
+		$.with(ones).fadeOut(options);
+	}
 	
-//	/**
-//	 * Animates the selected views out of their parent views by sliding it down, past its bottom
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	public void slideDown(long duration, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction){}
-//		});
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			Component parent = view.getParent();
-//			float y = 0;
-//			if (parent != null)
-//			{
-//				y = parent.getHeight();
-//			}
-//			else
-//			{
-//				Rectangle display = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-//				y = display.height;
-//			}
-//			Animator animator = new Animator();
-//			//FIXME: this fails because property does not exist!
-//			animator.addTarget(PropertySetter.getTarget(view, "y", y));
-//			if (builder == null)
-//				builder = anim.play(animator);
-//			else
-//				builder.with(animator);
-//		}
-//		anim.setDuration(duration);
-//		anim.start();
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it down, past its bottom
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	public void slideDown(final AnimationOptions options)
-//	{
-//		List<Animator> animations = new ArrayList<Animator>();
-//		for (final Component view : this.views)
-//		{
-//			Component parent = view.getParent();
-//			float y = 0;
-//			if (parent != null)
-//			{
-//				y = parent.getHeight();
-//			}
-//			else
-//			{
-//				Rectangle display = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-//				
-//				y = display.height;
-//			}
-//			Animator animator = new Animator();
-//			animator.addTarget(PropertySetter.getTarget(view, "y", y));
-//			if (options.progress() != null)
-//			{
-//				animator.addTarget(new TimingTarget() {
-//					@Override
-//					public void cancel(Animator animation) {}
-//
-//					@Override
-//					public void end(Animator animation) {}
-//
-//					@Override
-//					public void repeat(Animator animation) {}
-//
-//					@Override
-//					public void begin(Animator animation) {}
-//
-//					@Override
-//					public void reverse(Animator source) {}
-//
-//					@Override
-//					public void timingEvent(Animator source, double fraction) {
-//						options.progress().invoke($.with(view), "y", fraction, source.getDuration() - source.getTotalElapsedTime());
-//					}
-//				});
-//			}
-//			animations.add(animator);
-//		}
-//		
-//		AnimatorSet animation = animationWithOptions(options, animations);
-//		animation.start();
-//		
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it up, past its top
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	public void slideUp(long duration, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction) {}
-//		});
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			
-//			ObjectAnimator animator = ObjectAnimator.ofFloat(view, "y", 0);
-//			if (builder == null)
-//				builder = anim.play(animator);
-//			else
-//				builder.with(animator);
-//		}
-//		anim.setDuration(duration);
-//		anim.start();
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it up, past its top
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	public void slideUp(final AnimationOptions options)
-//	{		
-//		List<Animator> animations = new ArrayList<Animator>();
-//		for (final Component view : this.views)
-//		{
-//			Animator anim = new Animator();
-//			anim.addTarget(PropertySetter.getTarget(view, "y", 0f));
-//			if (options.progress() != null)
-//			{
-//				anim.addTarget(new TimingTarget() {
-//					@Override
-//					public void cancel(Animator animation) {}
-//
-//					@Override
-//					public void end(Animator animation) {}
-//
-//					@Override
-//					public void repeat(Animator animation) {}
-//
-//					@Override
-//					public void begin(Animator animation) {}
-//
-//					@Override
-//					public void reverse(Animator source) {}
-//
-//					@Override
-//					public void timingEvent(Animator source, double fraction) {
-//						options.progress().invoke($.with(view), "y", fraction, source.getDuration() - source.getTotalElapsedTime());
-//					}
-//				});
-//			}
-//			animations.add(anim);
-//		}
-//		
-//		AnimatorSet animation = animationWithOptions(options, animations);
-//		animation.start();
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it right, past its edge
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	public void slideRight(long duration, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction) {}
-//		});
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			Component parent = view.getParent();
-//			float x = 0;
-//			if (parent != null && parent instanceof View)
-//			{
-//				x = ((View) parent).getWidth();
-//			}
-//			else
-//			{
-//				Display display = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();  
-//				x = display.getHeight();
-//			}
-//			ObjectAnimator animator = ObjectAnimator.ofFloat(view, "x", x);
-//			if (builder == null)
-//				builder = anim.play(animator);
-//			else
-//				builder.with(animator);
-//		}
-//		anim.setDuration(duration);
-//		anim.start();
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it right, past its edge
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	public void slideRight(final AnimationOptions options)
-//	{		
-//		List<Animator> animations = new ArrayList<Animator>();
-//		for (final Component view : this.views)
-//		{
-//			Component parent = view.getParent();
-//			float x = 0;
-//			if (parent != null)
-//			{
-//				x = parent.getWidth();
-//			}
-//			else
-//			{
-//				Display display = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();  
-//				x = display.getHeight();
-//			}
-//			ObjectAnimator anim = ObjectAnimator.ofFloat(view, "x", x);
-//			if (options.progress() != null)
-//			{
-//				anim.addUpdateListener(new AnimatorUpdateListener(){
-//
-//					@Override
-//					public void onAnimationUpdate(ValueAnimator animation) {
-//						options.progress().invoke($.with(view), "x", animation.getAnimatedValue(), animation.getDuration() - animation.getCurrentPlayTime());
-//					}
-//					
-//				});
-//			}
-//			animations.add(anim);
-//		}
-//		
-//		AnimatorSet animation = animationWithOptions(options, animations);
-//		animation.start();
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it left, past its edge
-//	 * @param duration the length of time the animation should last
-//	 * @param complete the function to call when the animation has completed
-//	 */
-//	public void slideLeft(long duration, final Function complete)
-//	{
-//		AnimatorSet anim = new AnimatorSet();
-//		anim.addTarget(new TimingTarget() {
-//			@Override
-//			public void cancel(Animator animation) {}
-//
-//			@Override
-//			public void end(Animator animation) {
-//				if (complete != null)
-//					complete.invoke($.this);
-//			}
-//
-//			@Override
-//			public void repeat(Animator animation) {}
-//
-//			@Override
-//			public void begin(Animator animation) {}
-//
-//			@Override
-//			public void reverse(Animator source) {}
-//
-//			@Override
-//			public void timingEvent(Animator source, double fraction) {}
-//		});
-//		AnimatorSet.Builder builder = null;
-//		for (Component view : this.views)
-//		{
-//			ObjectAnimator animator = ObjectAnimator.ofFloat(view, "x", 0);
-//			if (builder == null)
-//				builder = anim.play(animator);
-//			else
-//				builder.with(animator);
-//		}
-//		anim.setDuration(duration);
-//		anim.start();
-//	}
-//	
-//	/**
-//	 * Animates the selected views out of its parent by sliding it left, past its edge
-//	 * @param options use to modify the behavior of the animation
-//	 */
-//	public void slideLeft(final AnimationOptions options)
-//	{
-//		List<Animator> animations = new ArrayList<Animator>();
-//		for (final Component view : this.views)
-//		{
-//			ObjectAnimator anim = ObjectAnimator.ofFloat(view, "x", 0);
-//			if (options.progress() != null)
-//			{
-//				anim.addUpdateListener(new AnimatorUpdateListener(){
-//
-//					@Override
-//					public void onAnimationUpdate(ValueAnimator animation) {
-//						options.progress().invoke($.with(view), "x", animation.getAnimatedValue(), animation.getDuration() - animation.getCurrentPlayTime());
-//					}
-//					
-//				});
-//			}
-//			animations.add(anim);
-//		}
-//		
-//		AnimatorSet animation = animationWithOptions(options, animations);
-//		animation.start();
-//	}
+	/**
+	 * Animates the selected views out of their parent views by sliding it down, past its bottom
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void slideDown(long duration, final Function complete)
+	{
+		slideDown(new AnimationOptions().duration(duration).complete(complete));
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it down, past its bottom
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings("unchecked")
+	public void slideDown(final AnimationOptions options)
+	{
+		for (final Component view : this.views)
+		{
+			Component parent = view.getParent();
+			float y = 0;
+			if (parent != null)
+			{
+				y = parent.getHeight();
+			}
+			else
+			{
+				Rectangle display = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+				
+				y = display.height;
+			}
+			$.with(view).animate(QuickMap.qm(QuickEntry.qe("y", y)), options);
+		}
+		
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it up, past its top
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void slideUp(long duration, final Function complete)
+	{
+		slideUp(new AnimationOptions().duration(duration).complete(complete));
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it up, past its top
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings("unchecked")
+	public void slideUp(final AnimationOptions options)
+	{		
+		animate(QuickMap.qm($.entry("y", 0f)), options);
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it right, past its edge
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void slideRight(long duration, final Function complete)
+	{
+		slideRight(new AnimationOptions().duration(duration).complete(complete));
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it right, past its edge
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings("unchecked")
+	public void slideRight(final AnimationOptions options)
+	{		
+		for (final Component view : this.views)
+		{
+			Component parent = view.getParent();
+			float x = 0;
+			if (parent != null)
+			{
+				x = parent.getWidth();
+			}
+			else
+			{
+				Rectangle display = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+				x = display.height;
+			}
+			$.with(view).animate(QuickMap.qm($.entry("x", x)), options);
+		}
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it left, past its edge
+	 * @param duration the length of time the animation should last
+	 * @param complete the function to call when the animation has completed
+	 */
+	public void slideLeft(long duration, final Function complete)
+	{
+		slideLeft(new AnimationOptions().duration(duration).complete(complete));
+	}
+	
+	/**
+	 * Animates the selected views out of its parent by sliding it left, past its edge
+	 * @param options use to modify the behavior of the animation
+	 */
+	@SuppressWarnings("unchecked")
+	public void slideLeft(final AnimationOptions options)
+	{
+		animate(QuickMap.qm($.entry("x", 0)), options);
+	}
 	
 	/**
 	 * Gets the value for the given attribute of the first view in the current selection. 
@@ -1720,14 +1371,20 @@ public class $
 	 * @since 1:16:05 PM Sep 4, 2013
 	 *
 	 */
-	public enum changeEvent
+	public enum ChangeEvent
 	{
 		INPUT_CARET_POSITION_CHANGED(InputMethodEvent.class),
 		INPUT_METHOD_TEXT_CHANGED(InputMethodEvent.class),
 		HIERARCHY_ANCESTOR_MOVED(HierarchyEvent.class),
 		HIERARCHY_ANCENSTOR_RESIZED(HierarchyEvent.class),
 		HIERARCHY_CHANGED(HierarchyEvent.class),
-		PROPERTY_CHANGED(PropertyChangeEvent.class);
+		PROPERTY_CHANGED(PropertyChangeEvent.class),
+		COMPONENT_HIDDEN(ComponentEvent.class),
+		COMPONENT_MOVED(ComponentEvent.class),
+		COMPONENT_RESIZED(ComponentEvent.class),
+		COMPONENT_SHOWN(ComponentEvent.class),
+		COMPONENT_ADDED(ContainerEvent.class),
+		COMPONENT_REMOVED(ContainerEvent.class);
 		
 		/** Class of the event received by the callback function */
 		private Class<?> eventClass;
@@ -1736,7 +1393,7 @@ public class $
 		 * Constructor
 		 * @param eventClass
 		 */
-		changeEvent(Class<?> eventClass)
+		ChangeEvent(Class<?> eventClass)
 		{
 			this.eventClass = eventClass;
 		}
@@ -1768,12 +1425,12 @@ public class $
 
 				@Override
 				public void caretPositionChanged(InputMethodEvent event) {
-					function.invoke($.with(component), changeEvent.INPUT_CARET_POSITION_CHANGED, event);
+					function.invoke($.with(component), ChangeEvent.INPUT_CARET_POSITION_CHANGED, event);
 				}
 
 				@Override
 				public void inputMethodTextChanged(InputMethodEvent event) {
-					function.invoke($.with(component), changeEvent.INPUT_METHOD_TEXT_CHANGED, event);
+					function.invoke($.with(component), ChangeEvent.INPUT_METHOD_TEXT_CHANGED, event);
 				}
 				
 			});
@@ -1782,12 +1439,12 @@ public class $
 
 				@Override
 				public void ancestorMoved(HierarchyEvent event) {
-					function.invoke($.with(component), changeEvent.HIERARCHY_ANCESTOR_MOVED, event);
+					function.invoke($.with(component), ChangeEvent.HIERARCHY_ANCESTOR_MOVED, event);
 				}
 
 				@Override
 				public void ancestorResized(HierarchyEvent event) {
-					function.invoke($.with(component), changeEvent.HIERARCHY_ANCENSTOR_RESIZED, event);
+					function.invoke($.with(component), ChangeEvent.HIERARCHY_ANCENSTOR_RESIZED, event);
 				}
 				
 			});
@@ -1796,7 +1453,7 @@ public class $
 
 				@Override
 				public void hierarchyChanged(HierarchyEvent event) {
-					function.invoke($.with(component), changeEvent.HIERARCHY_CHANGED, event);
+					function.invoke($.with(component), ChangeEvent.HIERARCHY_CHANGED, event);
 				}
 				
 			});
@@ -1805,9 +1462,50 @@ public class $
 				
 				@Override
 				public void propertyChange(PropertyChangeEvent event) {
-					function.invoke($.with(component), changeEvent.PROPERTY_CHANGED, event);
+					function.invoke($.with(component), ChangeEvent.PROPERTY_CHANGED, event);
 				}
 			});
+			
+			component.addComponentListener(new ComponentListener() {
+
+				@Override
+				public void componentHidden(ComponentEvent event) {
+					function.invoke($.with(component), ChangeEvent.COMPONENT_HIDDEN, event);
+				}
+
+				@Override
+				public void componentMoved(ComponentEvent event) {
+					function.invoke($.with(component), ChangeEvent.COMPONENT_MOVED, event);
+				}
+
+				@Override
+				public void componentResized(ComponentEvent event) {
+					function.invoke($.with(component), ChangeEvent.COMPONENT_RESIZED, event);
+				}
+
+				@Override
+				public void componentShown(ComponentEvent event) {
+					function.invoke($.with(component), ChangeEvent.COMPONENT_SHOWN, event);
+				}
+				
+			});
+			
+			if (component instanceof Container)
+			{
+				((Container) component).addContainerListener(new ContainerListener() {
+
+					@Override
+					public void componentAdded(ContainerEvent event) {
+						function.invoke($.with(component), ChangeEvent.COMPONENT_ADDED, event);
+					}
+
+					@Override
+					public void componentRemoved(ContainerEvent event) {
+						function.invoke($.with(component), ChangeEvent.COMPONENT_REMOVED, event);
+					}
+					
+				});
+			}
 		}
 		return this;
 	}
@@ -1908,26 +1606,41 @@ public class $
 	{
 		for (final Component view : this.views)
 		{
-			view.addMouseListener(new MouseListener() {
+			if (view instanceof AbstractButton)
+			{
+				((AbstractButton) view).addActionListener(new ActionListener() {
 
-				@Override
-				public void mouseClicked(MouseEvent e) {
-					function.invoke($.with(view));
-				}
+					@Override
+					public void actionPerformed(ActionEvent event) {
+						function.invoke($.with(view));
+					}
+					
+				});
+			}
+			else
+			{
+				view.addMouseListener(new MouseListener() {
 
-				@Override
-				public void mouseEntered(MouseEvent e) {}
+					@Override
+					public void mouseClicked(MouseEvent e) {
+						function.invoke($.with(view));
+					}
 
-				@Override
-				public void mouseExited(MouseEvent e) {}
+					@Override
+					public void mouseEntered(MouseEvent e) {}
 
-				@Override
-				public void mousePressed(MouseEvent e) {}
+					@Override
+					public void mouseExited(MouseEvent e) {}
 
-				@Override
-				public void mouseReleased(MouseEvent e) {}
-				
-			});
+					@Override
+					public void mousePressed(MouseEvent e) {}
+
+					@Override
+					public void mouseReleased(MouseEvent e) {}
+					
+				});
+			}
+			
 		}
 		return this;
 	}
@@ -2299,6 +2012,20 @@ public class $
 	}
 	
 	/**
+	 * Gets the number of child views contained in the first selected view
+	 * @return the number of child views contained in the first selected view
+	 */
+	public int children()
+	{
+		if (view(0) instanceof Container)
+		{
+			return ((Container) view(0)).getComponentCount();
+		}
+		else
+			return 0;
+	}
+	
+	/**
 	 * If the first view of the current selection is a subclass of {@link AdapterView}, this will loop through all the 
 	 * adapter data and invoke the given function, passing the varargs:
 	 * <ol>
@@ -2421,6 +2148,20 @@ public class $
 		{
 			return false;
 		}
+	}
+	
+	/**
+	 * Checks to see if the given Object is a subclass of the given class
+	 * @param obj the Object to check
+	 * @param clazz the class to check
+	 * @return {@code true} if the view is a subclass of the given class name. 
+	 * Otherwise, {@code false}.
+	 */
+	public static boolean is(Object obj, Class<?> clazz)
+	{
+		if (clazz.isInstance(obj))
+			return true;
+		return false;
 	}
 	
 

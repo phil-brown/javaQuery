@@ -1,5 +1,7 @@
 package org.jdesktop.core.animation.timing;
 
+import self.philbrown.javaQuery.Modified;
+
 import com.surelogic.ThreadSafe;
 
 /**
@@ -16,40 +18,53 @@ import com.surelogic.ThreadSafe;
  * 
  * @author Chet Haase
  * @author Tim Halloran
+ * @author Phil Brown
  */
+@Modified(author="Phil Brown", summary="Cleaned up and added inheritDocs documentation to improve javadocs.")
 @ThreadSafe(implementationOnly = true)
 public class TimingTargetAdapter implements TimingTarget {
 
-  @Override
-  public void begin(Animator source) {
-    // default is to do nothing
-  }
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void begin(Animator source) {
+	}
 
-  @Override
-  public void end(Animator source) {
-    // default is to do nothing
-  }
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void end(Animator source) {
+	}
 
-  @Override
-  public void cancel(Animator source) {
-	// TODO Auto-generated method stub
-	
-  }
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void cancel(Animator source) {
+	}
 
-  @Override
-  public void repeat(Animator source) {
-    // default is to do nothing
-  }
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void repeat(Animator source) {
+	}
 
-  @Override
-  public void reverse(Animator source) {
-    // default is to do nothing
-  }
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void reverse(Animator source) {
+	}
 
-  @Override
-  public void timingEvent(Animator source, double fraction) {
-    // default is to do nothing
-  }
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void timingEvent(Animator source, double fraction) {
+	}
 
   private volatile String f_debugName = null;
 

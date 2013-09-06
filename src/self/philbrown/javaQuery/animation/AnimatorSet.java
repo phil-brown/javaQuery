@@ -25,7 +25,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.jdesktop.core.animation.timing.Animator;
 import org.jdesktop.core.animation.timing.Interpolator;
-import org.jdesktop.core.animation.timing.PropertySetter;
 import org.jdesktop.core.animation.timing.TimingTarget;
 import org.jdesktop.core.animation.timing.TimingTargetAdapter;
 
@@ -742,8 +741,6 @@ public final class AnimatorSet extends Animator {
 
 		@Override
 		public void timingEvent(Animator source, double fraction) {
-			// TODO Auto-generated method stub
-			
 		}
 
 		/**
@@ -833,8 +830,6 @@ public final class AnimatorSet extends Animator {
 
 		@Override
 		public void timingEvent(Animator source, double fraction) {
-			// TODO Auto-generated method stub
-			
 		}
 
     }
