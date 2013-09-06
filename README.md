@@ -2,15 +2,14 @@
 
 ### Introduction
 
-__javaQuery__ is an *partial port* of [jQuery](https://github.com/jquery/jquery), and is designed to
+__javaQuery__ is an full port of [jQuery](https://github.com/jquery/jquery), and is designed to
 be as syntactically alike as possible in Java. *javaQuery* is derived from my full port of *jQuery* to
 Android: [droidQuery](http://bit.ly/droidquery).
 
 For those not familiar with *jQuery*, it essentially provides magic for allowing the simultaneous
 manipulation of a set of UI entities (using animations, attributes settings, etc), as well as to
-perform complex tasks, such as asynchronous network tasks. *javaQuery* can do many of these things, but
-currently supports no UI methods. It does, however, provide asynchronous network calls using Ajax
-syntax and provides a notification system for callbacks and listeners, among other handy features.
+perform complex tasks, such as asynchronous network tasks. *javaQuery* can do all of these things too, and
+provides support for other common tasks.
 
 Also like *jQuery*, *javaQuery* allows the addition of extensions to add to the power of the library.
 
