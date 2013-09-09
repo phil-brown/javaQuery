@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="javaQuery : The Java port of jQuery" />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>javaQuery</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/phil-brown/javaQuery">View on GitHub</a>
+
+          <h1 id="project_title">javaQuery</h1>
+          <h2 id="project_tagline">The Java port of jQuery</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/phil-brown/javaQuery/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/phil-brown/javaQuery/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h2>
+<a name="javaquery" class="anchor" href="#javaquery"><span class="octicon octicon-link"></span></a>javaQuery</h2>
+
+<h3>
+<a name="introduction" class="anchor" href="#introduction"><span class="octicon octicon-link"></span></a>Introduction</h3>
+
+<p><strong>javaQuery</strong> is an Java <em>port</em> of <a href="https://github.com/jquery/jquery">jQuery</a>, and is designed to
+be as syntactically alike as possible in Java. <em>javaQuery</em> is derived from my original Android port
+<a href="http://bit.ly/droidquery">droidQuery</a>.</p>
+
+<p>For those not familiar with <em>jQuery</em>, it essentially provides magic for allowing the simultaneous
+manipulation of a set of UI entities (using animations, attributes settings, etc), as well as to
+perform complex tasks, such as asynchronous network tasks. <em>javaQuery</em> can do all of these things.</p>
+
+<p>Essentially, <em>javaQuery</em> provides this same type of magic for the view hierarchy and <code>AsyncTasks</code>, and
+can be used to perform other frequent jobs, such as showing alert messages. Also like <em>jQuery</em>, 
+<em>javaQuery</em> allows the addition of extensions to add to the power of the library. A list of known 
+extensions is available on the <a href="https://github.com/phil-brown/javaQuery/wiki/known-extensions">wiki</a>.</p>
+
+<h3>
+<a name="how-to-include-javaquery-in-your-project" class="anchor" href="#how-to-include-javaquery-in-your-project"><span class="octicon octicon-link"></span></a>How to Include javaQuery in your Project</h3>
+
+<p>The simplest way to include <em>javaQuery</em> in your project is to copy the latest release jar
+into your project's build path, and if building from the command line, to reference the jar
+in your <em>classpath</em>.</p>
+
+<h3>
+<a name="license" class="anchor" href="#license"><span class="octicon octicon-link"></span></a>License</h3>
+
+<p>Copyright 2013 Phil Brown</p>
+
+<p><em>javaQuery</em> is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at</p>
+
+<p><a href="http://www.apache.org/licenses/LICENSE-2.0">http://www.apache.org/licenses/LICENSE-2.0</a></p>
+
+<p>Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.</p>
+
+<h3>
+<a name="how-to-use" class="anchor" href="#how-to-use"><span class="octicon octicon-link"></span></a>How to Use</h3>
+
+<blockquote>
+<p>Note: If you find any bugs or would like functionality that is missing, please create a new issue (<a href="https://github.com/phil-brown/javaQuery/issues">https://github.com/phil-brown/javaQuery/issues</a>).</p>
+</blockquote>
+
+<p>Below are some of the most common tasks for which <em>javaQuery</em> can be used.
+A sample application can also be found in the <code>samples</code> directory. The relevant code can be found
+in <a href="https://github.com/phil-brown/javaQuery/blob/master/samples/javaQueryTest/src/Example.java">Example.java</a>.
+You may also browse the <em>javadocs</em> <a href="http://phil-brown.github.io/javaQuery/doc/">here</a>.
+Finally, most of the <a href="http://api.jquery.com">jQuery API Documentation</a> is sufficient to explain the <em>javaQuery</em> API.</p>
+
+<p>To <strong>instantiate</strong> a new <em>droidQuery</em>, you need to pass in a <code>Component</code>, or set of <code>Component</code>s. The
+simplest way to create the instance is using the <code>with</code> static methods:</p>
+
+<pre><code>$.with(Component);
+$.with(List&lt;Component&gt;);
+$.with(Component[]);
+</code></pre>
+
+<p>Once you have the <em>javaQuery</em> instance, you can either save it as a variable, or chain calls to manipulate
+the selected <code>Component</code> or <code>Component</code>s.</p>
+
+<p><strong>Ajax</strong></p>
+
+<p>To perform an asynchronous network task, you can use <em>ajax</em>. The most straight-forward way to create and
+start an ajax task is with the <code>$.ajax(AjaxOptions)</code> method. For example:</p>
+
+<pre><code>$.ajax(new AjaxOptions().url("http://www.example.com")
+                        .type("GET")
+                        .dataType("text")
+                        .success(new Function() {
+                            @Override
+                            public void invoke($ javaQuery, Object... params) {
+                                javaQuery.alert((String) params[0]);
+                            }
+                        }).error(new Function() {
+                            @Override
+                            public void invoke($ javaQuery, Object... params) {
+                                int statusCode = (Integer) params[1];
+                                String error = (String) params[2];
+                                Log.e("Ajax", statusCode + " " + error);
+                            }
+                        }));
+</code></pre>
+
+<p><strong>Logging</strong></p>
+
+<p><em>javaQuery</em> is packaged with an advanced logging library that uses ANSI to print formatted text. If your
+console does not support ANSI, it is recommended you either install a plug-in (such as <a href="http://mihai-nita.net/java/">this one</a>
+for <em>Eclipse</em>), or simply add this call to disable ANSI output:</p>
+
+<pre><code>Log.disableANSI();
+</code></pre>
+
+<p><strong>Attributes</strong></p>
+
+<p><em>javaQuery</em> can be used to get or change the attributes of its selected <code>Component</code>s. The most common
+methods include <code>attr()</code> to get an attribute, <code>attr(String, Object)</code> to set an attribute, <code>val()</code> to
+get the value of a UI element (such as <code>String</code> for <code>JLabel</code>s, etc), and <code>val(Object)</code> to set the value.</p>
+
+<p><strong>Callbacks</strong></p>
+
+<p>The <em>Callbacks</em> Object provides a simple way to manage and fire sets of callbacks. To get an instance
+of this Object, use <code>$.Callbacks()</code>.</p>
+
+<p><strong>Effects</strong></p>
+
+<p><em>javaQuery</em> can be used to animate the selected <code>Component</code>s. The simplest way to perform a custom animation
+is by using the <code>animate(String, long, Easing, Function)</code> method. For example:</p>
+
+<pre><code>$.with(myComponent).children().animate("{left: 100px, top: 100, width: 50%, height: 50% }", 400, Easing.LINEAR, new Function() {
+    @Override
+    public void invoke($ javaQuery, Object... params)
+    {
+        Log.info("animation complete");
+    }
+});
+</code></pre>
+
+<p>It can also be used to perform pre-configured animations, such as fades (using <code>fadeIn</code>, <code>fadeOut</code>, 
+<code>fadeTo</code>, and <code>fadeToggle</code>) and slides (<code>slideUp</code>, <code>slideDown</code>, <code>slideLeft</code>, and <code>slideRight</code>).</p>
+
+<p><strong>Events</strong></p>
+
+<p><em>javaQuery</em> can be used to register for notification Strings sent by other objects. For example:</p>
+
+<pre><code>//Register for a notification (one of several methods)
+$.make().listenTo("print", new Function() {
+    @Override
+    public void invoke($ javaQuery, Object... params) {
+        String message = "";
+        if (params != null &amp;&amp; params.length &gt; 0)
+        {
+            if (params[0] instanceof Map) {
+                Map map = (Map) params[0];
+                if (map.containsKey("message"))
+                    message = (String) map.get("message");
+            }
+        }
+
+        Log.i("Printer", message);
+    }
+});
+
+//send a notification
+$.make().notify("print", $.map($.entry("message", "this is a message"));
+</code></pre>
+
+<p><strong>Selectors</strong></p>
+
+<p>The real magic behind <em>javaQuery</em> is its ability to manipulate a set of UI elements at one instance.
+a <code>Component</code> or a set of <code>Components</code>s can be passed to a <em>javaQuery</em> instance using any of the <em>with</em> methods,
+or a new instance of <em>javaQuery</em> containing a set of *Component*s can be created using any of the selector
+methods, including <code>view</code>, <code>child</code>, <code>parent</code>, <code>children</code>, <code>siblings</code>, <code>slice</code>, <code>selectAll</code>, <code>selectByType</code>,
+<code>selectChildren</code>, <code>selectEmpties</code>, <code>selectFocused</code>, <code>selectHidden</code>, <code>selectVisible</code>, <code>id</code>, <code>selectComponentWithName</code>
+<code>selectOnlyChilds</code>, and <code>selectParents</code>, among others.</p>
+
+<p><strong>Miscellaneous</strong></p>
+
+<p><em>javaQuery</em> also comes with several methods that simplify a lot of common tasks. including:</p>
+
+<ul>
+<li>
+<strong>map(String)/map(JSONObject)</strong> - converts a JSON String or a JSONObject to a Map Object</li>
+<li>
+<strong>map(Entry...)</strong> - quickly make a Map Object</li>
+<li>
+<strong>entry(String, Object)</strong> - quickly make a Map Entry Object</li>
+<li>
+<strong>alert</strong> - show an alert dialog</li>
+<li>
+<strong>write</strong> - write text to a file</li>
+<li>
+<strong>parseJSON</strong> - parses a JSON string and returns a JSONObject</li>
+<li>
+<strong>parseXML</strong> - parses an XML string and returns a Document Object</li>
+</ul><p><strong>A note about Scripts</strong></p>
+
+<p>In <em>jQuery</em>, there is an <code>Ajax</code> type called <code>Script</code>, which can be used to download a <code>Javascript</code> file.
+This type also exists in <em>javaQuery</em>, but instead of <code>Javascript</code>, it expects a command-line script, which
+is run in a Java process. A request may likely look like this:</p>
+
+<pre><code>$.ajax("{url: 'http://www.example.com/settings', type: 'post', dataType: 'script', data: '{id: 4, setting: 1}' }");
+</code></pre>
+
+<p>and as long as the request was successful, the script that responds will be run automatically.</p>
+
+<p>If the script calculates some data, the response would include the script output.</p>
+
+<p><strong>Special Thanks</strong></p>
+
+<p>This project uses <em>org.jdesktop</em> for core animations. This project was written by <em>Tim Halloran</em>,
+and <em>Chet Haase</em>.</p>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">javaQuery maintained by <a href="https://github.com/phil-brown">phil-brown</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
