@@ -175,5 +175,6 @@ If the script calculates some data, the response would include the script output
 
 **Special Thanks**
 
-This project uses *org.jdesktop* for core animations. This project was written by *Tim Halloran*,
-and *Chet Haase*.
+This project uses a modified version of the [Timing Framework](https://java.net/projects/timingframework) 
+for core animations. Without this project, which is similar to *Android* libraries I am familiar with, this
+port would have taken longer to complete.
