@@ -1002,7 +1002,7 @@ public <T extends Animator>T setDuration(long value, TimeUnit unit) {
    *         stopped, {@code false} if the animation was not running and didn't
    *         need to be stopped.
    */
-  private boolean stopHelper(boolean notify, boolean inCallbackContext) {
+  protected boolean stopHelper(boolean notify, boolean inCallbackContext) {
     final CountDownLatch latch;
     synchronized (f_lock) {
       if (!isRunning())

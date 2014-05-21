@@ -229,6 +229,7 @@ public final class AnimatorSet extends Animator {
      */
     @Override
     public void addTarget(TimingTarget target) {
+    	super.addTarget(target);
         for (Node node : mNodes) {
             Animator animation = node.animation;
             if (animation instanceof AnimatorSet) {
@@ -322,6 +323,10 @@ public final class AnimatorSet extends Animator {
             mStarted = false;
         }
         return true;
+    }
+    
+    protected boolean stopHelper(boolean notify, boolean inCallbackContext) {
+    	return stop();
     }
 
     /**
@@ -564,8 +569,9 @@ public final class AnimatorSet extends Animator {
         if (f_targets != null) {
         	CopyOnWriteArrayList<TimingTarget> tmpListeners =
                     (CopyOnWriteArrayList<TimingTarget>) f_targets.clone();
-            int nuf_targets = tmpListeners.size();
-            for (int i = 0; i < nuf_targets; ++i) {
+        	
+            int numTargets = tmpListeners.size();
+            for (int i = 0; i < numTargets; ++i) {
                 tmpListeners.get(i).begin(this);
             }
         }
@@ -576,8 +582,8 @@ public final class AnimatorSet extends Animator {
             if (f_targets != null) {
             	CopyOnWriteArrayList<TimingTarget> tmpListeners =
                         (CopyOnWriteArrayList<TimingTarget>) f_targets.clone();
-                int nuf_targets = tmpListeners.size();
-                for (int i = 0; i < nuf_targets; ++i) {
+                int numTargets = tmpListeners.size();
+                for (int i = 0; i < numTargets; ++i) {
                     tmpListeners.get(i).end(this);
                 }
             }

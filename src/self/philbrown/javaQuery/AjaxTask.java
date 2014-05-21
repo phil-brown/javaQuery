@@ -335,10 +335,10 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 		
 		HttpClient client = new DefaultHttpClient(params);
 		
-		
+		HttpResponse response = null;
 		try {
 			
-			HttpResponse response;
+			
 			
 			if (options.cookies() != null)
 			{
@@ -580,6 +580,26 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 		} catch (Throwable t) {
 			if (options.debug())
 				t.printStackTrace();
+			if (t instanceof java.net.SocketTimeoutException)
+			{
+				Error e = new Error();
+				AjaxError error = new AjaxError();
+				error.request = request;
+				error.options = options;
+				e.status = 0;
+				String reason = t.getMessage();
+				if (reason == null)
+					reason = "Socket Timeout";
+				e.reason = reason;
+				error.status = e.status;
+				error.reason = e.reason;
+				if (response != null)
+					e.headers = response.getAllHeaders();
+				else
+					e.headers = new Header[0];
+				e.error = error;
+				return e;
+			}
 			return null;
 		}
 	}
@@ -617,9 +637,9 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 				//invoke error with Request, Status, and Error
 				Error e = (Error) response;
 				if (options.context() != null)
-					options.error().invoke(new $(options.context()), e.error, e.status, e.reason);
+					options.error().invoke(new $(options.context()), e.error, e.status, e.reason, e.headers);
 				else
-					options.error().invoke(null, e.error, e.status, e.reason);
+					options.error().invoke(null, e.error, e.status, e.reason, e.headers);
 			}
 			
 			if (options.global())
@@ -632,9 +652,9 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 			{
 				//invoke success with parsed response and the status string
 				if (options.context() != null)
-					options.success().invoke(new $(options.context()), s.obj, s.reason);
+					options.success().invoke(new $(options.context()), s.obj, s.reason, s.headers);
 				else
-					options.success().invoke(null, s.obj, s.reason);
+					options.success().invoke(null, s.obj, s.reason, s.headers);
 			}
 			
 			if (options.global())
@@ -647,9 +667,9 @@ public class AjaxTask extends AsyncTask<Void, Void, TaskResponse>
 			if (response != null)
 			{
 				if (options.context() != null)
-					options.complete().invoke(new $(options.context()), response.reason);
+					options.complete().invoke(new $(options.context()), response.reason, response.headers);
 				else
-					options.complete().invoke(null, response.reason);
+					options.complete().invoke(null, response.reason, response.headers);
 			}
 			else
 			{

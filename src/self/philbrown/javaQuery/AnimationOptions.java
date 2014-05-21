@@ -33,13 +33,17 @@ public class AnimationOptions
 {
 	/** Contains the methods found in this Class */
 	private static Method[] methods = AnimationOptions.class.getMethods();
+	
+	/** Used for debugging. */
+	private static int debug_counter = 0;
+	private int debug_count = 0;
 
 	/**
 	 * Default constructor
 	 */
 	public AnimationOptions()
 	{
-		
+		debug_count = debug_counter++;
 	}
 	
 	/**
@@ -306,6 +310,12 @@ public class AnimationOptions
 	{
 		this.debug = debug;
 		return this;
+	}
+	
+	/** Used for debugging */
+	public int getDebugCount()
+	{
+		return debug_count;
 	}
 	
 	/**

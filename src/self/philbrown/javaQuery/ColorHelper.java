@@ -32,6 +32,7 @@ public class ColorHelper
 	
 	public ColorHelper()
 	{
+		Log.i("ColorHelper", "new Instance");
 	}
 	
 	public ColorHelper(Color color)
@@ -73,7 +74,12 @@ public class ColorHelper
 		return alpha;
 	}
 	public void setAlpha(int alpha) {
+		Log.i("ColorHelper", "Alpha = " + alpha);
 		this.alpha = alpha;
+	}
+	public void setAlpha(float alpha) {
+		Log.i("ColorHelper", "Alpha = " + alpha);
+		this.alpha = (int) alpha*255;
 	}
 	public Color getColor()
 	{

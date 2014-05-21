@@ -16,9 +16,11 @@
 
 package self.philbrown.javaQuery;
 
+import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.Image;
 import java.awt.Point;
@@ -61,6 +63,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
@@ -78,6 +81,7 @@ import org.jdesktop.core.animation.timing.Interpolator;
 import org.jdesktop.core.animation.timing.PropertySetter;
 import org.jdesktop.core.animation.timing.TimingTarget;
 import org.jdesktop.core.animation.timing.TimingTargetAdapter;
+import org.jdesktop.swing.animation.timing.sources.SwingTimerTimingSource;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -159,6 +163,14 @@ public class $
 	    return map;
 	}
 	
+	//setup animation timing source so that animations are updated 60 times per second (60FPS).
+	//This configuration can be changed at any time by the developer by accessing the static method
+	//in the Animator class.
+	static
+	{
+		Animator.setDefaultTimingSource(new SwingTimerTimingSource(1/60, TimeUnit.SECONDS));
+	}
+		
 	/** 
 	 * Optional data referenced by this javaQuery Object. Best practice is to make this a 
 	 * {@link WeakReference} to avoid memory leaks.
@@ -257,13 +269,13 @@ public class $
 	 * @param name
 	 * @return the found component, or {@code null} if it was not found.
 	 */
-	public static Component findComponentWithName(String name, Component root)//FIXME: debug to ensure this is working!
+	public static Component findComponentWithName(String name, Component parent)//FIXME: debug to ensure this is working!
 	{
-		if (root.getName() != null && root.equals(name))
-			return root;
-		else if (root instanceof Container)
+		if (parent.getName() != null && parent.equals(name))
+			return parent;
+		else if (parent instanceof Container)
 		{
-			for (Component c : ((Container) root).getComponents())
+			for (Component c : ((Container) parent).getComponents())
 			{
 				Component found = findComponentWithName(name, c);
 				if (found != null)
@@ -537,10 +549,7 @@ public class $
 		AnimatorSet animation = new AnimatorSet();
 		animation.playTogether(animators);
 		animation.setDuration(options.duration());
-		animation.addTarget(new TimingTarget() {
-
-			@Override
-			public void begin(Animator source) {}
+		animation.addTarget(new TimingTargetAdapter() {
 
 			@Override
 			public void cancel(Animator animation) {
@@ -557,18 +566,9 @@ public class $
 				if (options.complete() != null)
 					options.complete().invoke($.this);
 			}
-
-			@Override
-			public void repeat(Animator source) {}
-
-			@Override
-			public void reverse(Animator source) {}
-
-			@Override
-			public void timingEvent(Animator source, double fraction) {}
 			
 		});
-		animation.addTarget(new TimingTarget(){
+		animation.addTarget(new TimingTargetAdapter(){
 
 			@Override
 			public void cancel(Animator animation) {
@@ -585,20 +585,45 @@ public class $
 				if (options.complete() != null)
 					options.complete().invoke($.this);
 			}
-
-			@Override
-			public void repeat(Animator animation) {}
-
-			@Override
-			public void begin(Animator animation) {}
-
-			@Override
-			public void reverse(Animator source) {}
-
-			@Override
-			public void timingEvent(Animator source, double fraction) {}
 			
 		});
+		if (options.debug())
+		{
+			animation.setDebugName("$");
+			animation.addTarget(new TimingTarget() {
+
+				@Override
+				public void begin(Animator source) {
+					Log.d(Log.buildString("animation ", options.getDebugCount()), "begin");
+				}
+
+				@Override
+				public void end(Animator source) {
+					Log.d(Log.buildString("animation ", options.getDebugCount()), "end");
+				}
+
+				@Override
+				public void cancel(Animator source) {
+					Log.d(Log.buildString("animation ", options.getDebugCount()), "cancel");
+				}
+
+				@Override
+				public void repeat(Animator source) {
+					Log.d(Log.buildString("animation ", options.getDebugCount()), "repeat");
+				}
+
+				@Override
+				public void reverse(Animator source) {
+					Log.d(Log.buildString("animation ", options.getDebugCount()), "reverse");
+				}
+
+				@Override
+				public void timingEvent(Animator source, double fraction) {
+					Log.d(Log.buildString("animation ", options.getDebugCount()), Log.buildString("timingEvent with fraction ", fraction));
+				}
+				
+			});
+		}
 		Interpolator interpolator = null;
 		if (options.easing() == null)
 			options.easing(Easing.LINEAR);
@@ -804,6 +829,7 @@ public class $
 				Animator anim = null;
 				if (value instanceof String)
 					value = getAnimationValue(view, key, (String) value);
+				//final Object fValue = value;
 				if (value != null)
 				{
 					//special color cases
@@ -839,6 +865,9 @@ public class $
 									try {
 										setComponent.invoke(color, (int) d);
 										view.setBackground(color.getColor());
+//										if (view instanceof JComponent)
+//											((JComponent) view).revalidate();
+										view.repaint();
 									} catch (Throwable t) {
 										if (options.debug())
 											t.printStackTrace();
@@ -876,7 +905,7 @@ public class $
 												t.printStackTrace();
 										}
 										view.setBounds(bounds);
-
+										view.repaint();
 										if (options.progress() != null)
 										{
 											options.progress().invoke($.with(view), key, d, source.getDuration() - source.getTotalElapsedTime());
@@ -895,7 +924,17 @@ public class $
 						if (anim == null)
 						{
 							anim = new Animator();
-							anim.addTarget(PropertySetter.getTarget(view, key, value));
+							Object first;
+							try {
+								final Method getter = view.getClass().getMethod(Log.buildString("get", capitalize(key)));
+								first = getter.invoke(view);
+							}
+							catch (Throwable t)
+							{
+								first = 0;
+							}
+
+							anim.addTarget(PropertySetter.getTarget(view, key, first, value));
 							
 							if (options.progress() != null)
 							{
@@ -915,7 +954,8 @@ public class $
 						}
 					}
 					
-					anim.setRepeatCount(options.repeatCount());
+					if (options.repeatCount() >= 1)
+						anim.setRepeatCount(options.repeatCount());
 					if (options.reverse())
 						anim.setRepeatBehavior(Animator.RepeatBehavior.REVERSE);
 					animations.add(anim);
